@@ -5,8 +5,12 @@ type (
 	SparseMerkleTree interface {
 		Get(key []byte, version *Version) ([]byte, error)
 		Set(key, val []byte)
+		IsEmpty(key []byte) bool
+		Root() []byte
+		GetProof(key []byte, version *Version) (Proof, error)
+		LatestVersion() Version
 		Reset() error
-		Commit() error
+		Commit() (Version, error)
 		Rollback(version Version) error
 	}
 	TreeNode interface{}

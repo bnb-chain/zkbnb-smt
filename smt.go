@@ -25,21 +25,37 @@ type BASSparseMerkleTree struct {
 	db           TreeDB
 }
 
-func (tree BASSparseMerkleTree) Get(key []byte, version *Version) ([]byte, error) {
+func (tree *BASSparseMerkleTree) Get(key []byte, version *Version) ([]byte, error) {
 	return nil, nil
 }
 
-func (tree BASSparseMerkleTree) Set(key, val []byte) {
+func (tree *BASSparseMerkleTree) Set(key, val []byte) {
 }
 
-func (tree BASSparseMerkleTree) Reset() error {
+func (tree *BASSparseMerkleTree) IsEmpty(key []byte) bool {
+	return false
+}
+
+func (tree *BASSparseMerkleTree) Root() []byte {
 	return nil
 }
 
-func (tree BASSparseMerkleTree) Commit() error {
+func (tree *BASSparseMerkleTree) GetProof(key []byte, version *Version) (Proof, error) {
+	return Proof{}, nil
+}
+
+func (tree *BASSparseMerkleTree) LatestVersion() Version {
+	return 0
+}
+
+func (tree *BASSparseMerkleTree) Reset() error {
 	return nil
 }
 
-func (tree BASSparseMerkleTree) Rollback(version Version) error {
+func (tree *BASSparseMerkleTree) Commit() (Version, error) {
+	return 0, nil
+}
+
+func (tree *BASSparseMerkleTree) Rollback(version Version) error {
 	return nil
 }

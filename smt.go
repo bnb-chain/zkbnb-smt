@@ -30,7 +30,7 @@ func storageValueNodeKey(depth uint64, path []byte, version Version) []byte {
 	return bytes.Join([][]byte{storageValueNodePrefix, versionBuf, depthBuf, path}, sep)
 }
 
-func storaegFullTreeNodeKey(depth uint64, path []byte) []byte {
+func storageFullTreeNodeKey(depth uint64, path []byte) []byte {
 	depthBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(depthBuf, depth)
 	return bytes.Join([][]byte{storaegFullTreeNodePrefix, depthBuf, path}, sep)
@@ -77,7 +77,7 @@ func recoveryTree(smt *BASSparseMerkleTree, layers uint64, db database.TreeDB) (
 
 	// left
 	key := []byte{0}
-	buf, err = db.Get(storaegFullTreeNodeKey(1, key))
+	buf, err = db.Get(storageFullTreeNodeKey(1, key))
 	if err == nil {
 		storageFullNode := &StorageFullTreeNode{}
 		err = rlp.DecodeBytes(buf, storageFullNode)
@@ -89,7 +89,7 @@ func recoveryTree(smt *BASSparseMerkleTree, layers uint64, db database.TreeDB) (
 
 	// right
 	key = []byte{1}
-	buf, err = db.Get(storaegFullTreeNodeKey(1, key))
+	buf, err = db.Get(storageFullTreeNodeKey(1, key))
 	if err == nil {
 		storageFullNode := &StorageFullTreeNode{}
 		err = rlp.DecodeBytes(buf, storageFullNode)
@@ -127,7 +127,7 @@ func (tree *BASSparseMerkleTree) Get(key []byte, version *Version) ([]byte, erro
 		return nil, ErrVersionTooOld
 	}
 
-	if *version < tree.version {
+	if *version > tree.version {
 		return nil, ErrVersionTooHigh
 	}
 
@@ -181,7 +181,7 @@ func (tree *BASSparseMerkleTree) GetProof(key []byte, version *Version) (*Proof,
 		return nil, ErrVersionTooOld
 	}
 
-	if *version < tree.version {
+	if *version > tree.version {
 		return nil, ErrVersionTooHigh
 	}
 
@@ -212,7 +212,7 @@ func (tree *BASSparseMerkleTree) VerifyProof(proof *Proof, version *Version) boo
 		return false
 	}
 
-	if *version < tree.version {
+	if *version > tree.version {
 		return false
 	}
 	return tree.root.VerifyProof(utils.ReverseBytes(proof.MerkleProof), utils.ReverseInts(proof.ProofHelper), *version)
@@ -251,29 +251,23 @@ func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, node TreeNode, v
 	}
 
 	// persist tree
-	headKey := fullNode.key[:fullNode.depth/4]
-	if _, ok := isPersist[string(headKey)]; ok {
+	if fullNode.depth%4 != 1 {
+		return nil
+	}
+	if _, ok := isPersist[string(fullNode.key)]; ok {
 		// skip
 		return nil
 	}
-	headNode, err := tree.root.Get(headKey)
-	if err != nil {
-		return err
-	}
-	headFullNode, ok := headNode.(*FullTreeNode)
-	if !ok {
-		return ErrUnexpected
-	}
-	storageNode := headFullNode.ToStorageFullNode()
+	storageNode := fullNode.ToStorageFullNode()
 	rlpBytes, err := rlp.EncodeToBytes(storageNode)
 	if err != nil {
 		return err
 	}
-	err = db.Set(storaegFullTreeNodeKey(headFullNode.depth, headKey), rlpBytes)
+	err = db.Set(storageFullTreeNodeKey(fullNode.depth, fullNode.key), rlpBytes)
 	if err != nil {
 		return err
 	}
-	isPersist[string(headKey)] = struct{}{}
+	isPersist[string(fullNode.key)] = struct{}{}
 	fullNode.dirty = false
 	return nil
 }
@@ -389,7 +383,7 @@ func (tree *BASSparseMerkleTree) Rollback(version Version) error {
 		return ErrVersionTooOld
 	}
 
-	if version < tree.version {
+	if version > tree.version {
 		return ErrVersionTooHigh
 	}
 
@@ -420,7 +414,6 @@ func (tree *BASSparseMerkleTree) Rollback(version Version) error {
 		if err != nil {
 			return err
 		}
-		return nil
 	}
 
 	tree.version = newVersion

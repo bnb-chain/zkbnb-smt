@@ -8,7 +8,7 @@ import (
 )
 
 func recoveryStorageFullTreeNode(db database.TreeDB, key []byte) (*StorageFullTreeNode, error) {
-	buf, err := db.Get(storaegFullTreeNodeKey(1, key))
+	buf, err := db.Get(storageFullTreeNodeKey(uint64(len(key)), key))
 	if err != nil {
 		return nil, err
 	}

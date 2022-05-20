@@ -2,7 +2,6 @@ package bsmt
 
 import (
 	"bytes"
-	"errors"
 	"hash"
 
 	"github.com/bnb-chain/bas-smt/database"
@@ -85,13 +84,25 @@ func (node *FullTreeNode) Get(key []byte) (TreeNode, error) {
 	}
 
 	if len(key) == int(node.depth) {
-		return nil, errors.New("node not found")
+		return nil, ErrNodeNotFound
 	}
 
 	if key[node.depth] == left {
+		if node.leftChild == nil {
+			node.leftChild = node.extend(append(utils.CopyBytes(node.key), left), false)
+		}
+		if node.leftChild == nil {
+			return nil, ErrNodeNotFound
+		}
 		return node.leftChild.Get(key)
 	}
 
+	if node.rightChild == nil {
+		node.rightChild = node.extend(append(utils.CopyBytes(node.key), right), false)
+	}
+	if node.rightChild == nil {
+		return nil, ErrNodeNotFound
+	}
 	return node.rightChild.Get(key)
 }
 
@@ -110,10 +121,16 @@ func (node *FullTreeNode) GetProof(key []byte, version Version) ([][]byte, []int
 	}
 
 	if len(key) == int(node.depth) {
-		return nil, nil, errors.New("node not found")
+		return nil, nil, ErrNodeNotFound
 	}
 
 	if key[node.depth] == left {
+		if node.leftChild == nil {
+			node.leftChild = node.extend(append(utils.CopyBytes(node.key), left), false)
+		}
+		if node.leftChild == nil {
+			return nil, nil, ErrNodeNotFound
+		}
 		proofs, helpers, err := node.leftChild.GetProof(key, version)
 		if err != nil {
 			return nil, nil, err
@@ -121,6 +138,12 @@ func (node *FullTreeNode) GetProof(key []byte, version Version) ([][]byte, []int
 		return append(proofs, proof), append(helpers, left), nil
 	}
 
+	if node.rightChild == nil {
+		node.rightChild = node.extend(append(utils.CopyBytes(node.key), right), false)
+	}
+	if node.rightChild == nil {
+		return nil, nil, ErrNodeNotFound
+	}
 	proofs, helpers, err := node.rightChild.GetProof(key, version)
 	if err != nil {
 		return nil, nil, err
@@ -149,12 +172,18 @@ func (node *FullTreeNode) VerifyProof(proofs [][]byte, helpers []int, version Ve
 	switch helpers[node.depth] {
 	case left:
 		if node.leftChild == nil {
+			node.leftChild = node.extend(append(utils.CopyBytes(node.key), left), false)
+		}
+		if node.leftChild == nil {
 			return false
 		}
 		return node.leftChild.VerifyProof(proofs, helpers, version)
 	case right:
 		if node.rightChild == nil {
 			return false
+		}
+		if node.rightChild == nil {
+			node.rightChild = node.extend(append(utils.CopyBytes(node.key), right), false)
 		}
 		return node.rightChild.VerifyProof(proofs, helpers, version)
 	}
@@ -164,41 +193,28 @@ func (node *FullTreeNode) VerifyProof(proofs [][]byte, helpers []int, version Ve
 func (node *FullTreeNode) Set(key, val []byte, version Version) (TreeNode, error) {
 	n := node.Copy()
 	if bytes.Equal(node.key, key) {
-		n.hasher.Write(val)
-		hash := n.hasher.Sum(nil)
-		n.hasher.Reset()
-		n.latestHash = hash
+		n.latestHash = val
 		n.versions = append([]Version{version}, n.versions...)
-		n.size = uint64(len(key) + len(hash))
+		n.size = uint64(len(key) + len(val))
 		return n, nil
 	}
 
 	if len(key) > int(n.depth) {
 		if n.leftChild == nil {
-			leftKey := append(utils.CopyBytes(node.key), 0)
-			child := NewFullNode(node.hasher, leftKey, emptyHash, nil, n.depth+1, n.db)
-			if node.db != nil && len(leftKey)/4 == 0 { // try to load from database
-				storageFullNode, _ := recoveryStorageFullTreeNode(node.db, leftKey)
-				if storageFullNode != nil {
-					child = storageFullNode.ToFullTreeNode(node.hasher, node.db, leftKey)
-				}
-
-			}
-			n.leftChild = child
+			leftKey := append(utils.CopyBytes(node.key), left)
+			n.leftChild = n.extend(leftKey, true)
 		}
 		if n.rightChild == nil {
-			rightKey := append(utils.CopyBytes(node.key), 1)
-			child := NewFullNode(node.hasher, rightKey, emptyHash, nil, n.depth+1, n.db)
-			if node.db != nil && len(rightKey)/4 == 0 { // try to load from database
-				storageFullNode, _ := recoveryStorageFullTreeNode(node.db, rightKey)
-				if storageFullNode != nil {
-					child = storageFullNode.ToFullTreeNode(node.hasher, node.db, rightKey)
-				}
-
-			}
-			n.rightChild = child
+			rightKey := append(utils.CopyBytes(node.key), right)
+			n.rightChild = n.extend(rightKey, true)
 		}
 	}
+
+	defer func() {
+		n.latestHash = n.HashSubTree()
+		n.versions = append([]Version{version}, n.versions...)
+		n.size = uint64(len(key) + len(n.latestHash))
+	}()
 
 	if key[n.depth] == left {
 		copied, err := n.leftChild.Set(key, val, version)
@@ -214,14 +230,14 @@ func (node *FullTreeNode) Set(key, val []byte, version Version) (TreeNode, error
 		return nil, err
 	}
 	n.rightChild = copied
-
-	n.hasher.Write(append(n.leftChild.Root(), n.rightChild.Root()...))
-	n.latestHash = n.hasher.Sum(nil)
-	n.hasher.Reset()
-	n.versions = append([]Version{version}, n.versions...)
-	n.size = uint64(len(key) + len(n.latestHash))
-
 	return n, nil
+}
+
+func (node *FullTreeNode) HashSubTree() []byte {
+	node.hasher.Write(node.leftChild.Root())
+	node.hasher.Write(node.rightChild.Root())
+	defer node.hasher.Reset()
+	return node.hasher.Sum(nil)
 }
 
 func (node *FullTreeNode) Copy() *FullTreeNode {
@@ -237,6 +253,21 @@ func (node *FullTreeNode) Copy() *FullTreeNode {
 		hasher:     node.hasher,
 		dirty:      true,
 	}
+}
+
+func (node *FullTreeNode) extend(key []byte, writeable bool) TreeNode {
+	var child TreeNode
+	if writeable {
+		child = NewFullNode(node.hasher, key, emptyHash, nil, node.depth+1, node.db)
+	}
+	length := len(key)
+	if node.db != nil && length > 1 && length%4 == 1 { // try to load from database { // try to load from database
+		storageFullNode, _ := recoveryStorageFullTreeNode(node.db, key)
+		if storageFullNode != nil {
+			child = storageFullNode.ToFullTreeNode(node.hasher, node.db, key)
+		}
+	}
+	return child
 }
 
 func (node *FullTreeNode) flatten(depth int) []*StorageShortTreeNode {

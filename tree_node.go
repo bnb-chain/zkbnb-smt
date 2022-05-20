@@ -178,14 +178,11 @@ func (node *FullTreeNode) Set(key, val []byte, version Version) (TreeNode, error
 			leftKey := append(utils.CopyBytes(node.key), 0)
 			child := NewFullNode(node.hasher, leftKey, emptyHash, nil, n.depth+1, n.db)
 			if node.db != nil && len(leftKey)/4 == 0 { // try to load from database
-				storageFullNode, err := recoveryStorageFullTreeNode(node.db, leftKey)
-				if err != nil && !errors.Is(err, database.ErrDatabaseNotFound) {
-					return nil, err
-				}
-
-				if err == nil {
+				storageFullNode, _ := recoveryStorageFullTreeNode(node.db, leftKey)
+				if storageFullNode != nil {
 					child = storageFullNode.ToFullTreeNode(node.hasher, node.db, leftKey)
 				}
+
 			}
 			n.leftChild = child
 		}
@@ -193,14 +190,11 @@ func (node *FullTreeNode) Set(key, val []byte, version Version) (TreeNode, error
 			rightKey := append(utils.CopyBytes(node.key), 1)
 			child := NewFullNode(node.hasher, rightKey, emptyHash, nil, n.depth+1, n.db)
 			if node.db != nil && len(rightKey)/4 == 0 { // try to load from database
-				storageFullNode, err := recoveryStorageFullTreeNode(node.db, rightKey)
-				if err != nil && !errors.Is(err, database.ErrDatabaseNotFound) {
-					return nil, err
-				}
-
-				if err == nil {
+				storageFullNode, _ := recoveryStorageFullTreeNode(node.db, rightKey)
+				if storageFullNode != nil {
 					child = storageFullNode.ToFullTreeNode(node.hasher, node.db, rightKey)
 				}
+
 			}
 			n.rightChild = child
 		}

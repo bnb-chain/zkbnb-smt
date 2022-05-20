@@ -29,12 +29,12 @@ func (db *MemoryDB) Get(key []byte) ([]byte, error) {
 	defer db.lock.RUnlock()
 
 	if db.db == nil {
-		return nil, database.ErrDatabaseClosed
+		return nil, ErrDatabaseClosed
 	}
 	if entry, ok := db.db[string(key)]; ok {
 		return utils.CopyBytes(entry), nil
 	}
-	return nil, database.ErrDatabaseNotFound
+	return nil, ErrDatabaseNotFound
 }
 
 func (db *MemoryDB) Has(key []byte) (bool, error) {
@@ -42,7 +42,7 @@ func (db *MemoryDB) Has(key []byte) (bool, error) {
 	defer db.lock.RUnlock()
 
 	if db.db == nil {
-		return false, database.ErrDatabaseClosed
+		return false, ErrDatabaseClosed
 	}
 	_, ok := db.db[string(key)]
 	return ok, nil
@@ -53,7 +53,7 @@ func (db *MemoryDB) Set(key []byte, value []byte) error {
 	defer db.lock.Unlock()
 
 	if db.db == nil {
-		return database.ErrDatabaseClosed
+		return ErrDatabaseClosed
 	}
 	db.db[string(key)] = utils.CopyBytes(value)
 	return nil
@@ -64,7 +64,7 @@ func (db *MemoryDB) Delete(key []byte) error {
 	defer db.lock.Unlock()
 
 	if db.db == nil {
-		return database.ErrDatabaseClosed
+		return ErrDatabaseClosed
 	}
 	delete(db.db, string(key))
 	return nil

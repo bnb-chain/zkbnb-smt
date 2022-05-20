@@ -3,7 +3,6 @@ package bsmt
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"hash"
 
 	"github.com/ethereum/go-ethereum/rlp"
@@ -117,7 +116,7 @@ type BASSparseMerkleTree struct {
 
 func (tree *BASSparseMerkleTree) Get(key []byte, version *Version) ([]byte, error) {
 	if tree.root == nil {
-		return nil, errors.New("empty root")
+		return nil, ErrEmptyRoot
 	}
 
 	if version == nil {
@@ -125,11 +124,11 @@ func (tree *BASSparseMerkleTree) Get(key []byte, version *Version) ([]byte, erro
 	}
 
 	if tree.recentVersion > *version {
-		return nil, errors.New("version too old")
+		return nil, ErrVersionTooOld
 	}
 
 	if *version < tree.version {
-		return nil, errors.New("version too new")
+		return nil, ErrVersionTooHigh
 	}
 
 	node, err := tree.root.Get(key)
@@ -145,12 +144,12 @@ func (tree *BASSparseMerkleTree) Get(key []byte, version *Version) ([]byte, erro
 			return tree.db.Get(storageValueNodeKey(node.Depth(), key, *version))
 		}
 	}
-	return nil, errors.New("not found")
+	return nil, ErrNodeNotFound
 }
 
 func (tree *BASSparseMerkleTree) Set(key, val []byte) error {
 	if tree.root == nil {
-		return errors.New("empty root")
+		return ErrEmptyRoot
 	}
 	newRoot, err := tree.root.Set(key, val, tree.version+1)
 	if err != nil {
@@ -171,7 +170,7 @@ func (tree *BASSparseMerkleTree) Root() []byte {
 
 func (tree *BASSparseMerkleTree) GetProof(key []byte, version *Version) (*Proof, error) {
 	if tree.root == nil {
-		return nil, errors.New("empty root")
+		return nil, ErrEmptyRoot
 	}
 
 	if version == nil {
@@ -179,11 +178,11 @@ func (tree *BASSparseMerkleTree) GetProof(key []byte, version *Version) (*Proof,
 	}
 
 	if tree.recentVersion > *version {
-		return nil, errors.New("version too old")
+		return nil, ErrVersionTooOld
 	}
 
 	if *version < tree.version {
-		return nil, errors.New("version too new")
+		return nil, ErrVersionTooHigh
 	}
 
 	proofs, helpers, err := tree.root.GetProof(key, *version)
@@ -263,7 +262,7 @@ func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, node TreeNode, v
 	}
 	headFullNode, ok := headNode.(*FullTreeNode)
 	if !ok {
-		return errors.New("assert head node to full node failed")
+		return ErrUnexpected
 	}
 	storageNode := headFullNode.ToStorageFullNode()
 	rlpBytes, err := rlp.EncodeToBytes(storageNode)
@@ -383,15 +382,15 @@ func (tree *BASSparseMerkleTree) rollback(root TreeNode, oldVersion Version, db 
 
 func (tree *BASSparseMerkleTree) Rollback(version Version) error {
 	if tree.root == nil {
-		return errors.New("empty root")
+		return ErrEmptyRoot
 	}
 
 	if tree.recentVersion > version {
-		return errors.New("version too old")
+		return ErrVersionTooOld
 	}
 
 	if version < tree.version {
-		return errors.New("version too new")
+		return ErrVersionTooHigh
 	}
 
 	newVersion := version

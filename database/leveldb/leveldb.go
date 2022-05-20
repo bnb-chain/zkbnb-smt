@@ -1,6 +1,7 @@
 package leveldb
 
 import (
+	"bytes"
 	"sync"
 
 	"github.com/bnb-chain/bas-smt/database"
@@ -26,17 +27,14 @@ const (
 )
 
 type Database struct {
-	fn        string // filename for reporting
 	namespace []byte
-	db        *leveldb.DB     // LevelDB instance
-	quitLock  sync.Mutex      // Mutex protecting the quit channel access
-	quitChan  chan chan error // Quit channel to stop the metrics collection before closing the database
+	db        *leveldb.DB // LevelDB instance
+	quitLock  sync.Mutex  // Mutex protecting the quit channel access
 }
 
-// New returns a wrapped LevelDB object. The namespace is the prefix that the
-// metrics reporting should use for surfacing internal stats.
-func New(file string, cache int, handles int, namespace string, readonly bool) (*Database, error) {
-	return NewCustom(file, namespace, func(options *opt.Options) {
+// New returns a wrapped LevelDB object. The namespace is the prefix that the datastore.
+func New(file string, cache int, handles int, readonly bool) (*Database, error) {
+	return NewCustom(file, "", func(options *opt.Options) {
 		// Ensure we have some minimal caching and file guarantees
 		if cache < minCache {
 			cache = minCache
@@ -54,8 +52,14 @@ func New(file string, cache int, handles int, namespace string, readonly bool) (
 	})
 }
 
-// NewCustom returns a wrapped LevelDB object. The namespace is the prefix that the
-// metrics reporting should use for surfacing internal stats.
+// NewFromExistLevelDB returns a wrapped LevelDB object.
+func NewFromExistLevelDB(db *leveldb.DB) *Database {
+	return &Database{
+		db: db,
+	}
+}
+
+// NewCustom returns a wrapped LevelDB object. The namespace is the prefix that the datastore.
 // The customize function allows the caller to modify the leveldb options.
 func NewCustom(file string, namespace string, customize func(options *opt.Options)) (*Database, error) {
 	options := configureOptions(customize)
@@ -70,12 +74,20 @@ func NewCustom(file string, namespace string, customize func(options *opt.Option
 	}
 
 	ldb := &Database{
-		fn:        file,
-		namespace: []byte(namespace),
-		db:        db,
-		quitChan:  make(chan chan error),
+		db: db,
+	}
+
+	if len(namespace) != 0 {
+		ldb.namespace = []byte(namespace)
 	}
 	return ldb, nil
+}
+
+// WrapWithNamespace returns a wrapped LevelDB object.
+// The namespace is the prefix that the datastore.
+func WrapWithNamespace(db *Database, namespace string) *Database {
+	db.namespace = []byte(namespace)
+	return db
 }
 
 // configureOptions sets some default options, then runs the provided setter.
@@ -92,31 +104,31 @@ func configureOptions(customizeFn func(*opt.Options)) *opt.Options {
 	return options
 }
 
+// wrapKey returns a wrapper key with namespace.
+func wrapKey(namespace, key []byte) []byte {
+	if len(namespace) > 0 {
+		return bytes.Join([][]byte{namespace, key}, []byte(":"))
+	}
+	return key
+}
+
 // Close stops the metrics collection, flushes any pending data to disk and closes
 // all io accesses to the underlying key-value store.
 func (db *Database) Close() error {
 	db.quitLock.Lock()
 	defer db.quitLock.Unlock()
 
-	if db.quitChan != nil {
-		errc := make(chan error)
-		db.quitChan <- errc
-		if err := <-errc; err != nil {
-			return err
-		}
-		db.quitChan = nil
-	}
 	return db.db.Close()
 }
 
 // Has retrieves if a key is present in the key-value store.
 func (db *Database) Has(key []byte) (bool, error) {
-	return db.db.Has(append(db.namespace, key...), nil)
+	return db.db.Has(wrapKey(db.namespace, key), nil)
 }
 
 // Get retrieves the given key if it's present in the key-value store.
 func (db *Database) Get(key []byte) ([]byte, error) {
-	dat, err := db.db.Get(append(db.namespace, key...), nil)
+	dat, err := db.db.Get(wrapKey(db.namespace, key), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -125,12 +137,12 @@ func (db *Database) Get(key []byte) ([]byte, error) {
 
 // Put inserts the given value into the key-value store.
 func (db *Database) Set(key []byte, value []byte) error {
-	return db.db.Put(append(db.namespace, key...), value, nil)
+	return db.db.Put(wrapKey(db.namespace, key), value, nil)
 }
 
 // Delete removes the key from the key-value store.
 func (db *Database) Delete(key []byte) error {
-	return db.db.Delete(append(db.namespace, key...), nil)
+	return db.db.Delete(wrapKey(db.namespace, key), nil)
 }
 
 // NewBatch creates a write-only key-value store that buffers changes to its host
@@ -153,13 +165,13 @@ type batch struct {
 
 // Put inserts the given value into the batch for later committing.
 func (b *batch) Set(key, value []byte) error {
-	b.b.Put(append(b.namespace, key...), value)
+	b.b.Put(wrapKey(b.namespace, key), value)
 	return nil
 }
 
 // Delete inserts the a key removal into the batch for later committing.
 func (b *batch) Delete(key []byte) error {
-	b.b.Delete(append(b.namespace, key...))
+	b.b.Delete(wrapKey(b.namespace, key))
 	return nil
 }
 

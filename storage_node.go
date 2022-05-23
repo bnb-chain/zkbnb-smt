@@ -31,17 +31,8 @@ func (node *StorageFullTreeNode) ToFullTreeNode(hasher hash.Hash, db database.Tr
 	depth := uint64(len(key))
 	hash := node.LatestHash
 	tmp := make(map[string]*FullTreeNode, len(node.Children)+1)
-	head := &FullTreeNode{
-		latestHash: hash,
-		versions:   node.Versions,
-		key:        key,
-		depth:      depth,
-		size:       uint64(len(key) + len(hash)),
-		db:         db,
-		hasher:     hasher,
-	}
+	head := NewFullNode(hasher, key, hash, node.Versions, depth, db)
 	tmp[string(head.key)] = head
-
 	for _, child := range node.Children {
 		key = child.Key
 		depth := uint64(len(key))

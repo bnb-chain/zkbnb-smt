@@ -23,7 +23,6 @@ func NewFullNode(hasher hash.Hash, key, hash []byte, versions []Version, depth u
 		versions:   versions,
 		key:        key,
 		depth:      depth,
-		size:       uint64(len(key) + len(hash)),
 		hasher:     hasher,
 		db:         db,
 	}
@@ -36,7 +35,6 @@ type FullTreeNode struct {
 	depth      uint64
 	leftChild  TreeNode
 	rightChild TreeNode
-	size       uint64
 	dirty      bool
 	hasher     hash.Hash
 	db         database.TreeDB
@@ -171,7 +169,6 @@ func (node *FullTreeNode) Set(key, val []byte, version Version) (TreeNode, error
 	if bytes.Equal(node.key, key) {
 		n.latestHash = val
 		n.versions = append([]Version{version}, n.versions...)
-		n.size = uint64(len(key) + len(val))
 		return n, nil
 	}
 
@@ -189,7 +186,6 @@ func (node *FullTreeNode) Set(key, val []byte, version Version) (TreeNode, error
 	defer func() {
 		n.latestHash = n.HashSubTree()
 		n.versions = append([]Version{version}, n.versions...)
-		n.size = uint64(len(key) + len(n.latestHash))
 	}()
 
 	switch key[n.depth] {
@@ -224,7 +220,6 @@ func (node *FullTreeNode) Copy() *FullTreeNode {
 		depth:      node.depth,
 		leftChild:  node.leftChild,
 		rightChild: node.rightChild,
-		size:       node.size,
 		db:         node.db,
 		hasher:     node.hasher,
 		dirty:      true,

@@ -258,6 +258,7 @@ func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, node TreeNode, v
 		// skip
 		return nil
 	}
+
 	storageNode := fullNode.ToStorageFullNode()
 	rlpBytes, err := rlp.EncodeToBytes(storageNode)
 	if err != nil {
@@ -276,6 +277,7 @@ func (tree *BASSparseMerkleTree) retrieveDirtyNode(root TreeNode, collecion map[
 	if !root.Dirty() {
 		return
 	}
+
 	collecion[string(root.Key())] = root
 	if root.Left() != nil {
 		tree.retrieveDirtyNode(root.Left(), collecion)
@@ -356,6 +358,19 @@ func (tree *BASSparseMerkleTree) rollback(root TreeNode, oldVersion Version, db 
 		} else {
 			root.SetRoot(emptyHash)
 			root.SetVersions(nil)
+		}
+		// persist to disk
+		fullNode, ok := root.(*FullTreeNode)
+		if root.Depth()%4 == 1 && ok {
+			storageNode := fullNode.ToStorageFullNode()
+			rlpBytes, err := rlp.EncodeToBytes(storageNode)
+			if err != nil {
+				return err
+			}
+			err = db.Set(storageFullTreeNodeKey(fullNode.depth, fullNode.key), rlpBytes)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

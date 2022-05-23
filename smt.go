@@ -226,7 +226,7 @@ func (tree *BASSparseMerkleTree) Reset() {
 	tree.root = tree.lastSavedRoot
 }
 
-func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, node TreeNode, version Version, isPersist map[string]struct{}) error {
+func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, node TreeNode, version Version) error {
 	fullNode, ok := node.(*FullTreeNode)
 	if !ok {
 		return nil
@@ -254,10 +254,6 @@ func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, node TreeNode, v
 	if fullNode.depth%4 != 1 {
 		return nil
 	}
-	if _, ok := isPersist[string(fullNode.key)]; ok {
-		// skip
-		return nil
-	}
 
 	storageNode := fullNode.ToStorageFullNode()
 	rlpBytes, err := rlp.EncodeToBytes(storageNode)
@@ -268,7 +264,6 @@ func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, node TreeNode, v
 	if err != nil {
 		return err
 	}
-	isPersist[string(fullNode.key)] = struct{}{}
 	fullNode.dirty = false
 	return nil
 }
@@ -293,11 +288,10 @@ func (tree *BASSparseMerkleTree) Commit() (Version, error) {
 	if tree.db != nil {
 		// write tree nodes, prune old version
 		batch := tree.db.NewBatch()
-		isPersist := map[string]struct{}{}
 		collection := map[string]TreeNode{}
 		tree.retrieveDirtyNode(tree.root, collection)
 		for _, node := range collection {
-			err := tree.writeNode(batch, node, newVersion, isPersist)
+			err := tree.writeNode(batch, node, newVersion)
 			if err != nil {
 				return tree.version, err
 			}

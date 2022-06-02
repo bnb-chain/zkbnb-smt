@@ -42,9 +42,9 @@ func testProof(t *testing.T, hasher hash.Hash, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	key1 := []byte{0, 0, 0, 1}
-	key2 := []byte{1, 1, 1, 0}
-	key3 := []byte{1, 1, 1, 0, 1}
+	key1 := uint64(0)
+	key2 := uint64(1)
+	key3 := uint64(245)
 	hasher.Write([]byte("test1"))
 	val1 := hasher.Sum(nil)
 	hasher.Reset()
@@ -175,9 +175,9 @@ func testRollback(t *testing.T, hasher hash.Hash, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	key1 := []byte{0, 0, 0, 1}
-	key2 := []byte{1, 1, 1, 0}
-	key3 := []byte{1, 1, 1, 0, 1}
+	key1 := uint64(1)
+	key2 := uint64(2)
+	key3 := uint64(23)
 	hasher.Write([]byte("test1"))
 	val1 := hasher.Sum(nil)
 	hasher.Reset()
@@ -280,9 +280,9 @@ func testReset(t *testing.T, hasher hash.Hash, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	key1 := []byte{0, 0, 0, 1}
-	key2 := []byte{1, 1, 1, 0}
-	key3 := []byte{1, 1, 1, 0, 1}
+	key1 := uint64(1)
+	key2 := uint64(2)
+	key3 := uint64(3)
 	hasher.Write([]byte("test1"))
 	val1 := hasher.Sum(nil)
 	hasher.Reset()
@@ -292,14 +292,9 @@ func testReset(t *testing.T, hasher hash.Hash, db database.TreeDB) {
 	hasher.Write([]byte("test3"))
 	val3 := hasher.Sum(nil)
 	hasher.Reset()
-	err = smt.Set(key1, val1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = smt.Set(key2, val2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	smt.Set(key1, val1)
+	smt.Set(key2, val2)
+
 	version1, err := smt.Commit()
 	if err != nil {
 		t.Fatal(err)
@@ -315,10 +310,7 @@ func testReset(t *testing.T, hasher hash.Hash, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	err = smt.Set(key3, val3)
-	if err != nil {
-		t.Fatal(err)
-	}
+	smt.Set(key3, val3)
 	smt.Reset()
 
 	_, err = smt.Get(key3, &version1)

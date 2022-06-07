@@ -12,7 +12,6 @@ import (
 )
 
 var (
-	emptyHash                 = []byte(nil)
 	latestVersionKey          = []byte(`latestVersion`)
 	recentVersionNumberKey    = []byte(`recentVersionNumber`)
 	storageValueNodePrefix    = []byte(`v`)
@@ -40,12 +39,13 @@ func storageFullTreeNodeKey(depth uint8, path uint64) []byte {
 
 var _ SparseMerkleTree = (*BASSparseMerkleTree)(nil)
 
-func NewBASSparseMerkleTree(hasher hash.Hash, db database.TreeDB, maxVersionNum, maxDepth uint64,
+func NewBASSparseMerkleTree(hasher hash.Hash, db database.TreeDB, maxVersionNum, maxDepth uint64, nilHash []byte,
 	opts ...Option) (SparseMerkleTree, error) {
 	smt := &BASSparseMerkleTree{
 		journal:       map[int]*TreeNode{},
 		maxDepth:      maxDepth,
 		maxVersionNum: maxVersionNum,
+		nilHashes:     constuctNilHashes(maxDepth, nilHash, hasher),
 		hasher:        hasher,
 	}
 
@@ -60,9 +60,26 @@ func NewBASSparseMerkleTree(hasher hash.Hash, db database.TreeDB, maxVersionNum,
 	recoveryTree(smt, 1, db)
 	smt.db = db
 	if len(smt.child) == 0 {
-		smt.child = append(smt.child, NewTreeNode(0, 0, hasher))
+		smt.child = append(smt.child, NewTreeNode(0, 0, smt.nilHashes, hasher))
 	}
 	return smt, nil
+}
+
+func constuctNilHashes(maxDepth uint64, nilHash []byte, hasher hash.Hash) [][]byte {
+	if maxDepth == 0 {
+		return [][]byte{nilHash}
+	}
+	nilHashes := make([][]byte, maxDepth)
+	nilHashes[0] = nilHash
+	for i := 0; i < int(maxDepth); i++ {
+		hasher.Write(nilHash)
+		hasher.Write(nilHash)
+		nilHash = hasher.Sum(nil)
+		hasher.Reset()
+		nilHashes[i] = nilHash
+	}
+
+	return nilHashes
 }
 
 func recoveryTree(smt *BASSparseMerkleTree, layers uint64, db database.TreeDB) {
@@ -114,9 +131,9 @@ type BASSparseMerkleTree struct {
 	journal       map[int]*TreeNode // Change nodes
 	maxDepth      uint64
 	maxVersionNum uint64
-
-	hasher hash.Hash
-	db     database.TreeDB
+	nilHashes     [][]byte
+	hasher        hash.Hash
+	db            database.TreeDB
 }
 
 func (tree *BASSparseMerkleTree) index(key uint64) (uint8, uint64, int) {
@@ -174,7 +191,7 @@ func (tree *BASSparseMerkleTree) getRootNode(depth uint8, path uint64, index int
 			treeNode.Rebuild()
 			tree.child[index] = treeNode
 		} else if writable {
-			tree.child[index] = NewTreeNode(depth, path, tree.hasher)
+			tree.child[index] = NewTreeNode(depth, path, tree.nilHashes, tree.hasher)
 		}
 	}
 
@@ -275,7 +292,7 @@ func (tree *BASSparseMerkleTree) IsEmpty() bool {
 
 func (tree *BASSparseMerkleTree) Root() []byte {
 	if len(tree.child) == 0 {
-		return emptyHash
+		return tree.nilHashes[0]
 	}
 
 	return tree.child[0].Root()

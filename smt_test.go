@@ -9,8 +9,13 @@ import (
 	"github.com/bnb-chain/bas-smt/database"
 	wrappedLevelDB "github.com/bnb-chain/bas-smt/database/leveldb"
 	"github.com/bnb-chain/bas-smt/database/memory"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
+)
+
+var (
+	nilHash = common.FromHex("01ef55cdf3b9b0d65e6fb6317f79627534d971fd96c811281af618c0028d5e7a")
 )
 
 type testEnv struct {
@@ -37,7 +42,7 @@ func prepareEnv(t *testing.T) []testEnv {
 }
 
 func testProof(t *testing.T, hasher hash.Hash, db database.TreeDB) {
-	smt, err := NewBASSparseMerkleTree(hasher, db, 50, 128)
+	smt, err := NewBASSparseMerkleTree(hasher, db, 50, 128, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +119,7 @@ func testProof(t *testing.T, hasher hash.Hash, db database.TreeDB) {
 	}
 
 	// restore tree from db
-	smt2, err := NewBASSparseMerkleTree(sha256.New(), db, 50, 128)
+	smt2, err := NewBASSparseMerkleTree(sha256.New(), db, 50, 128, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +175,7 @@ func Test_BASSparseMerkleTree_Proof(t *testing.T) {
 }
 
 func testRollback(t *testing.T, hasher hash.Hash, db database.TreeDB) {
-	smt, err := NewBASSparseMerkleTree(hasher, db, 50, 128)
+	smt, err := NewBASSparseMerkleTree(hasher, db, 50, 128, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +252,7 @@ func testRollback(t *testing.T, hasher hash.Hash, db database.TreeDB) {
 	}
 
 	// restore tree from db
-	smt2, err := NewBASSparseMerkleTree(sha256.New(), db, 50, 128)
+	smt2, err := NewBASSparseMerkleTree(sha256.New(), db, 50, 128, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +280,7 @@ func Test_BASSparseMerkleTree_Rollback(t *testing.T) {
 }
 
 func testReset(t *testing.T, hasher hash.Hash, db database.TreeDB) {
-	smt, err := NewBASSparseMerkleTree(hasher, db, 50, 128)
+	smt, err := NewBASSparseMerkleTree(hasher, db, 50, 128, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}

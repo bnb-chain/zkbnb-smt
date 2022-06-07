@@ -6,7 +6,7 @@ import (
 	"github.com/bnb-chain/bas-smt/utils"
 )
 
-func NewTreeNode(depth uint8, path uint64, hasher hash.Hash) *TreeNode {
+func NewTreeNode(depth uint8, path uint64, emptyHashes [][]byte, hasher hash.Hash) *TreeNode {
 	fullNode := &TreeNode{
 		path:   path,
 		depth:  depth,
@@ -16,7 +16,7 @@ func NewTreeNode(depth uint8, path uint64, hasher hash.Hash) *TreeNode {
 	pathItr := uint64(0)
 	elementNum := 1 << depthItr
 	fullNode.Children[0] = &LeafNode{
-		LatestHash: emptyHash,
+		LatestHash: emptyHashes[depth],
 		depth:      depth,
 		path:       path,
 	}
@@ -27,7 +27,7 @@ func NewTreeNode(depth uint8, path uint64, hasher hash.Hash) *TreeNode {
 			elementNum += 1 << depthItr
 		}
 		fullNode.Children[i] = &LeafNode{
-			LatestHash: emptyHash,
+			LatestHash: emptyHashes[depth+depthItr],
 			depth:      depth + depthItr,
 			path:       path*(1<<(depth+depthItr-1)) + pathItr,
 		}
@@ -64,9 +64,6 @@ func (node *TreeNode) Rebuild() {
 }
 
 func (node *TreeNode) Root() []byte {
-	if node.Children[0] == nil {
-		return emptyHash
-	}
 	return node.Children[0].Root()
 }
 

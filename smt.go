@@ -25,7 +25,7 @@ func storageValueNodeKey(depth uint8, path uint64, version Version) []byte {
 	pathBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(versionBuf, uint64(version))
 	binary.BigEndian.PutUint64(depthBuf, uint64(depth))
-	binary.BigEndian.PutUint64(depthBuf, path)
+	binary.BigEndian.PutUint64(pathBuf, path)
 	return bytes.Join([][]byte{storageValueNodePrefix, versionBuf, depthBuf, pathBuf}, sep)
 }
 
@@ -33,7 +33,7 @@ func storageFullTreeNodeKey(depth uint8, path uint64) []byte {
 	depthBuf := make([]byte, 8)
 	pathBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(depthBuf, uint64(depth))
-	binary.BigEndian.PutUint64(depthBuf, path)
+	binary.BigEndian.PutUint64(pathBuf, path)
 	return bytes.Join([][]byte{storaegFullTreeNodePrefix, depthBuf, pathBuf}, sep)
 }
 

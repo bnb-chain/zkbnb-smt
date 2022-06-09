@@ -138,6 +138,10 @@ func (tree *BASSparseMerkleTree) Get(key uint64, version *Version) ([]byte, erro
 		return nil, ErrEmptyRoot
 	}
 
+	if key >= 1<<tree.maxDepth {
+		return nil, ErrInvalidKey
+	}
+
 	if version == nil {
 		version = &tree.version
 	}
@@ -164,7 +168,10 @@ func (tree *BASSparseMerkleTree) Get(key uint64, version *Version) ([]byte, erro
 	return targetNode.Root(), nil
 }
 
-func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) {
+func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
+	if key >= 1<<tree.maxDepth {
+		return ErrInvalidKey
+	}
 	newVersion := tree.version + 1
 
 	targetNode := tree.root
@@ -191,6 +198,7 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) {
 		tree.journal[journalKey{targetNode.depth, targetNode.path}] = targetNode
 	}
 	tree.root = targetNode
+	return nil
 }
 
 func (tree *BASSparseMerkleTree) IsEmpty() bool {
@@ -204,6 +212,10 @@ func (tree *BASSparseMerkleTree) Root() []byte {
 func (tree *BASSparseMerkleTree) GetProof(key uint64, version *Version) (*Proof, error) {
 	if tree.IsEmpty() {
 		return nil, ErrEmptyRoot
+	}
+
+	if key >= 1<<tree.maxDepth {
+		return nil, ErrInvalidKey
 	}
 
 	if version == nil {

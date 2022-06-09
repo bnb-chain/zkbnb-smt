@@ -12,4 +12,6 @@ var (
 	ErrNodeNotFound = errors.New("tree node not found")
 
 	ErrUnexpected = errors.New("unexpected error")
+
+	ErrInvalidKey = errors.New("invalid key")
 )

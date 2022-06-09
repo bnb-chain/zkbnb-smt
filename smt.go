@@ -19,11 +19,9 @@ var (
 )
 
 func storageFullTreeNodeKey(depth uint8, path uint64) []byte {
-	depthBuf := make([]byte, 8)
 	pathBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(depthBuf, uint64(depth))
 	binary.BigEndian.PutUint64(pathBuf, path)
-	return bytes.Join([][]byte{storaegFullTreeNodePrefix, depthBuf, pathBuf}, sep)
+	return bytes.Join([][]byte{storaegFullTreeNodePrefix, {depth}, pathBuf}, sep)
 }
 
 var _ SparseMerkleTree = (*BASSparseMerkleTree)(nil)

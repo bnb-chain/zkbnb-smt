@@ -7,6 +7,7 @@ func NewTreeNode(depth uint8, path uint64, nilHashes map[uint8][]byte, hasher *H
 		path:         path,
 		depth:        depth,
 		hasher:       hasher,
+		extended:     true,
 	}
 	for i := 0; i < 2; i++ {
 		treeNode.Internals[i] = nilHashes[depth+1]
@@ -33,6 +34,7 @@ type TreeNode struct {
 	path         uint64
 	depth        uint8
 	hasher       *Hasher
+	extended     bool
 }
 
 func (node *TreeNode) Root() []byte {
@@ -82,6 +84,10 @@ func (node *TreeNode) ComputeInternalHash(version Version) {
 	})
 }
 
+func (node *TreeNode) Extended() bool {
+	return node.extended
+}
+
 func (node *TreeNode) Copy() *TreeNode {
 	return &TreeNode{
 		Children:  node.Children,
@@ -89,6 +95,7 @@ func (node *TreeNode) Copy() *TreeNode {
 		Versions:  node.Versions,
 		depth:     node.depth,
 		hasher:    node.hasher,
+		extended:  node.extended,
 	}
 }
 
@@ -120,7 +127,14 @@ func (node *TreeNode) Rollback(targetVersion Version) bool {
 }
 
 func (node *TreeNode) ToStorageTreeNode() *StorageTreeNode {
+	var children [16]*StorageLeafNode
+	for i := 0; i < 16; i++ {
+		if node.Children[i] != nil {
+			children[i] = &StorageLeafNode{node.Children[i].Versions}
+		}
+	}
 	return &StorageTreeNode{
+		Children:  children,
 		Internals: node.Internals,
 		Versions:  node.Versions,
 	}
@@ -131,13 +145,18 @@ type VersionInfo struct {
 	Hash []byte
 }
 
+type StorageLeafNode struct {
+	Versions []*VersionInfo `rlp:"optional"`
+}
+
 type StorageTreeNode struct {
-	Internals [14]InternalNode `rlp:"optional"`
-	Versions  []*VersionInfo   `rlp:"optional"`
+	Children  [16]*StorageLeafNode `rlp:"optional"`
+	Internals [14]InternalNode     `rlp:"optional"`
+	Versions  []*VersionInfo       `rlp:"optional"`
 }
 
 func (node *StorageTreeNode) ToTreeNode(depth uint8, path uint64, nilHashes map[uint8][]byte, hasher *Hasher) *TreeNode {
-	return &TreeNode{
+	treeNode := &TreeNode{
 		Internals:    node.Internals,
 		Versions:     node.Versions,
 		nilHash:      nilHashes[depth],
@@ -145,5 +164,12 @@ func (node *StorageTreeNode) ToTreeNode(depth uint8, path uint64, nilHashes map[
 		path:         path,
 		depth:        depth,
 		hasher:       hasher,
+		extended:     true,
 	}
+	for i := 0; i < 16; i++ {
+		if node.Children[i] != nil {
+			treeNode.Children[i] = &TreeNode{Versions: node.Children[i].Versions}
+		}
+	}
+	return treeNode
 }

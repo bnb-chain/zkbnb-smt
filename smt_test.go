@@ -48,8 +48,8 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	}
 
 	key1 := uint64(0)
-	key2 := uint64(1)
-	key3 := uint64(2)
+	key2 := uint64(255)
+	key3 := uint64(213)
 	val1 := hasher.Hash([]byte("test1"))
 	version := smt.LatestVersion()
 	_, err = smt.Get(key1, &version)
@@ -74,15 +74,24 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !bytes.Equal(hash1, val1) {
+		t.Fatalf("not equal to the original, want: %v, got: %v", val1, hash1)
+	}
 
 	hash2, err := smt.Get(key2, &version)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !bytes.Equal(hash2, val2) {
+		t.Fatalf("not equal to the original, want: %v, got: %v", val2, hash2)
+	}
 
 	hash3, err := smt.Get(key3, &version)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !bytes.Equal(hash3, val3) {
+		t.Fatalf("not equal to the original, want: %v, got: %v", val3, hash3)
 	}
 
 	proof, err := smt.GetProof(key1, &version)

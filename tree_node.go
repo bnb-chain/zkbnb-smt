@@ -71,7 +71,7 @@ func (node *TreeNode) SetChildren(child *TreeNode, nibble int) *TreeNode {
 
 // top-down
 func (node *TreeNode) ComputeInternalHash(version Version) {
-	// leaf node first
+	// leaf node
 	for i := 0; i < 15; i += 2 {
 		left, right := node.nilChildHash, node.nilChildHash
 		if node.Children[i] != nil {
@@ -80,7 +80,7 @@ func (node *TreeNode) ComputeInternalHash(version Version) {
 		if node.Children[i+1] != nil {
 			right = node.Children[i+1].Root()
 		}
-		node.Internals[5+i/2] = node.hasher.Hash(left, right)
+		node.Internals[6+i/2] = node.hasher.Hash(left, right)
 	}
 	// internal node
 	for i := 13; i > 1; i -= 2 {

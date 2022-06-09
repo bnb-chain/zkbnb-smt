@@ -151,7 +151,7 @@ func (tree *BASSparseMerkleTree) Get(key uint64, version *Version) ([]byte, erro
 	}
 
 	targetNode := tree.root
-	var depth uint8 = 0
+	var depth uint8 = 4
 	for i := 0; i < int(tree.maxDepth)/4; i++ {
 		path := key >> (int(tree.maxDepth) - (i+1)*4)
 		nibble := path & 0x0000000f
@@ -168,7 +168,7 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) {
 	newVersion := tree.version + 1
 
 	targetNode := tree.root
-	var depth uint8 = 0
+	var depth uint8 = 4
 	var parentNodes []*TreeNode
 	for i := 0; i < int(tree.maxDepth)/4; i++ {
 		path := key >> (int(tree.maxDepth) - (i+1)*4)
@@ -179,15 +179,13 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) {
 
 		depth += 4
 	}
-	targetNode = targetNode.Set(val, newVersion)
+	targetNode = targetNode.Set(val, newVersion) // leaf
 	tree.journal[journalKey{targetNode.depth, targetNode.path}] = targetNode
 	// recompute root hash
 	for i := len(parentNodes) - 1; i >= 0; i-- {
 		nibble := key >> (int(tree.maxDepth) - (i+1)*4) & 0x0000000f
 		targetNode = parentNodes[i].SetChildren(targetNode, int(nibble))
-		if targetNode.Extended() {
-			targetNode.ComputeInternalHash(newVersion)
-		}
+		targetNode.ComputeInternalHash(newVersion)
 		tree.journal[journalKey{targetNode.depth, targetNode.path}] = targetNode
 	}
 	tree.root = targetNode
@@ -219,7 +217,7 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64, version *Version) (*Proof,
 	}
 
 	targetNode := tree.root
-	var depth uint8 = 0
+	var depth uint8 = 4
 	var proofs [][]byte
 	var helpers []int
 

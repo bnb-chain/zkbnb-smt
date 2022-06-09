@@ -1,6 +1,7 @@
 package bsmt
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"testing"
@@ -69,17 +70,17 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	_, err = smt.Get(key1, &version)
+	hash1, err := smt.Get(key1, &version)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = smt.Get(key2, &version)
+	hash2, err := smt.Get(key2, &version)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = smt.Get(key3, &version)
+	hash3, err := smt.Get(key3, &version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,19 +118,28 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	_, err = smt2.Get(key1, &version)
+	hash11, err := smt2.Get(key1, &version)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !bytes.Equal(hash1, hash11) {
+		t.Fatalf("not equal to the original, want: %v, got: %v", hash1, hash11)
+	}
 
-	_, err = smt2.Get(key2, &version)
+	hash22, err := smt2.Get(key2, &version)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !bytes.Equal(hash2, hash22) {
+		t.Fatalf("not equal to the original, want: %v, got: %v", hash2, hash22)
+	}
 
-	_, err = smt2.Get(key3, &version)
+	hash33, err := smt2.Get(key3, &version)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !bytes.Equal(hash3, hash33) {
+		t.Fatalf("not equal to the original, want: %v, got: %v", hash3, hash33)
 	}
 
 	proof, err = smt2.GetProof(key1, &version)
@@ -137,7 +147,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	if !smt2.VerifyProof(proof, &version) {
+	if !smt.VerifyProof(proof, &version) {
 		t.Fatal("verify proof1 failed")
 	}
 
@@ -146,7 +156,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	if !smt2.VerifyProof(proof, &version) {
+	if !smt.VerifyProof(proof, &version) {
 		t.Fatal("verify proof2 failed")
 	}
 
@@ -155,7 +165,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	if !smt2.VerifyProof(proof, &version) {
+	if !smt.VerifyProof(proof, &version) {
 		t.Fatal("verify proof2 failed")
 	}
 }

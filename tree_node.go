@@ -46,12 +46,21 @@ func (node *TreeNode) Root() []byte {
 
 func (node *TreeNode) Set(hash []byte, version Version) *TreeNode {
 	copied := node.Copy()
-	copied.Versions = append(node.Versions, &VersionInfo{
+	copied.newVersion(&VersionInfo{
 		Ver:  version,
 		Hash: hash,
 	})
 
 	return copied
+}
+
+func (node *TreeNode) newVersion(version *VersionInfo) {
+	if len(node.Versions) > 0 && node.Versions[len(node.Versions)-1].Ver == version.Ver {
+		// a new version already exists, overwrite it
+		node.Versions[len(node.Versions)-1] = version
+		return
+	}
+	node.Versions = append(node.Versions, version)
 }
 
 func (node *TreeNode) SetChildren(child *TreeNode, nibble int) *TreeNode {
@@ -78,7 +87,7 @@ func (node *TreeNode) ComputeInternalHash(version Version) {
 		node.Internals[i/2-1] = node.hasher.Hash(node.Internals[i-1], node.Internals[i])
 	}
 	// update current root node
-	node.Versions = append(node.Versions, &VersionInfo{
+	node.newVersion(&VersionInfo{
 		Ver:  version,
 		Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
 	})
@@ -90,12 +99,15 @@ func (node *TreeNode) Extended() bool {
 
 func (node *TreeNode) Copy() *TreeNode {
 	return &TreeNode{
-		Children:  node.Children,
-		Internals: node.Internals,
-		Versions:  node.Versions,
-		depth:     node.depth,
-		hasher:    node.hasher,
-		extended:  node.extended,
+		Children:     node.Children,
+		Internals:    node.Internals,
+		Versions:     node.Versions,
+		nilHash:      node.nilHash,
+		nilChildHash: node.nilChildHash,
+		path:         node.path,
+		depth:        node.depth,
+		hasher:       node.hasher,
+		extended:     node.extended,
 	}
 }
 
@@ -171,5 +183,6 @@ func (node *StorageTreeNode) ToTreeNode(depth uint8, path uint64, nilHashes map[
 			treeNode.Children[i] = &TreeNode{Versions: node.Children[i].Versions}
 		}
 	}
+
 	return treeNode
 }

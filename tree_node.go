@@ -112,8 +112,11 @@ func (node *TreeNode) Copy() *TreeNode {
 }
 
 func (node *TreeNode) Prune(oldestVersion Version) {
+	if len(node.Versions) <= 1 {
+		return
+	}
 	i := 0
-	for ; i < len(node.Versions); i++ {
+	for ; i < len(node.Versions)-1; i++ {
 		if node.Versions[i].Ver >= oldestVersion {
 			break
 		}

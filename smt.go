@@ -55,16 +55,13 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxVersionNum ui
 }
 
 func constuctNilHashes(maxDepth uint8, nilHash []byte, hasher *Hasher) map[uint8][]byte {
-	if maxDepth == 0 {
-		return map[uint8][]byte{0: nilHash}
-	}
 	nilHashes := make(map[uint8][]byte, maxDepth)
-	nilHashes[0] = nilHash
-	for i := 0; i <= int(maxDepth); i++ {
-		nilHash = hasher.Hash(nilHash, nilHash)
-		nilHashes[uint8(i)] = nilHash
+	nilHashes[maxDepth] = nilHash
+	for i := 1; i <= int(maxDepth); i++ {
+		nHash := hasher.Hash(nilHash, nilHash)
+		nilHashes[maxDepth-uint8(i)] = nHash
+		nilHash = nHash
 	}
-
 	return nilHashes
 }
 

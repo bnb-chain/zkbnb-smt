@@ -54,7 +54,7 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 }
 
 func constuctNilHashes(maxDepth uint8, nilHash []byte, hasher *Hasher) map[uint8][]byte {
-	nilHashes := make(map[uint8][]byte, maxDepth)
+	nilHashes := make(map[uint8][]byte, maxDepth+1)
 	nilHashes[maxDepth] = nilHash
 	for i := 1; i <= int(maxDepth); i++ {
 		nHash := hasher.Hash(nilHash, nilHash)
@@ -157,7 +157,7 @@ func (tree *BASSparseMerkleTree) Get(key uint64, version *Version) ([]byte, erro
 	var depth uint8 = 4
 	for i := 0; i < int(tree.maxDepth)/4; i++ {
 		path := key >> (int(tree.maxDepth) - (i+1)*4)
-		nibble := path & 0x0000000f
+		nibble := path & 0x000000000000000f
 		tree.extendNode(targetNode, nibble, path, depth)
 		targetNode = targetNode.Children[nibble]
 
@@ -178,7 +178,7 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 	var parentNodes []*TreeNode
 	for i := 0; i < int(tree.maxDepth)/4; i++ {
 		path := key >> (int(tree.maxDepth) - (i+1)*4)
-		nibble := path & 0x0000000f
+		nibble := path & 0x000000000000000f
 		parentNodes = append(parentNodes, targetNode)
 		tree.extendNode(targetNode, nibble, path, depth)
 		targetNode = targetNode.Children[nibble]
@@ -189,7 +189,7 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 	tree.journal[journalKey{targetNode.depth, targetNode.path}] = targetNode
 	// recompute root hash
 	for i := len(parentNodes) - 1; i >= 0; i-- {
-		childNibble := key >> (int(tree.maxDepth) - (i+1)*4) & 0x0000000f
+		childNibble := key >> (int(tree.maxDepth) - (i+1)*4) & 0x000000000000000f
 		targetNode = parentNodes[i].SetChildren(targetNode, int(childNibble))
 		if targetNode.Extended() {
 			targetNode.ComputeInternalHash(newVersion)
@@ -237,7 +237,7 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64, version *Version) (*Proof,
 
 	for i := 0; i < int(tree.maxDepth)/4; i++ {
 		path := key >> (int(tree.maxDepth) - (i+1)*4)
-		nibble := path & 0x0000000f
+		nibble := path & 0x000000000000000f
 		tree.extendNode(targetNode, nibble, path, depth)
 		tree.extendNode(targetNode, nibble^1, path-nibble+nibble^1, depth)
 		if neighborNode == nil {

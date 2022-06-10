@@ -42,7 +42,7 @@ func prepareEnv(t *testing.T) []testEnv {
 }
 
 func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
-	smt, err := NewBASSparseMerkleTree(hasher, db, 50, 8, nilHash)
+	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	smt.Set(key2, val2)
 	smt.Set(key3, val3)
 
-	version, err = smt.Commit()
+	version, err = smt.Commit(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	}
 
 	// restore tree from db
-	smt2, err := NewBASSparseMerkleTree(hasher, db, 50, 8, nilHash)
+	smt2, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func Test_BASSparseMerkleTree_Proof(t *testing.T) {
 }
 
 func testRollback(t *testing.T, hasher *Hasher, db database.TreeDB) {
-	smt, err := NewBASSparseMerkleTree(hasher, db, 50, 8, nilHash)
+	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func testRollback(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	smt.Set(key1, val1)
 	smt.Set(key2, val2)
 
-	version1, err := smt.Commit()
+	version1, err := smt.Commit(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func testRollback(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	}
 
 	smt.Set(key3, val3)
-	version2, err := smt.Commit()
+	version2, err := smt.Commit(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func testRollback(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	}
 
 	// restore tree from db
-	smt2, err := NewBASSparseMerkleTree(hasher, db, 50, 8, nilHash)
+	smt2, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func Test_BASSparseMerkleTree_Rollback(t *testing.T) {
 }
 
 func testReset(t *testing.T, hasher *Hasher, db database.TreeDB) {
-	smt, err := NewBASSparseMerkleTree(hasher, db, 50, 8, nilHash)
+	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func testReset(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	smt.Set(key1, val1)
 	smt.Set(key2, val2)
 
-	version1, err := smt.Commit()
+	version1, err := smt.Commit(nil)
 	if err != nil {
 		t.Fatal(err)
 	}

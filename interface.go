@@ -11,7 +11,7 @@ type (
 		VerifyProof(proof *Proof, version *Version) bool
 		LatestVersion() Version
 		Reset()
-		Commit() (Version, error)
+		Commit(recentVersion *Version) (Version, error)
 		Rollback(version Version) error
 	}
 )

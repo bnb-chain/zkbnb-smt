@@ -14,4 +14,6 @@ var (
 	ErrUnexpected = errors.New("unexpected error")
 
 	ErrInvalidKey = errors.New("invalid key")
+
+	ErrInvalidDepth = errors.New("depth must be a multiple of 4")
 )

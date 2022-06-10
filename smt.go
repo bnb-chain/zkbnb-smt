@@ -113,7 +113,8 @@ func (tree *BASSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64,
 	if node.Children[nibble] == nil {
 		node.Children[nibble] = NewTreeNode(depth, path, tree.nilHashes, tree.hasher)
 	}
-	if !node.Children[nibble].Extended() {
+	if depth < tree.maxDepth && // no need to extend leaf nodes
+		!node.Children[nibble].Extended() {
 		tree.constructNode(node, nibble, path, depth)
 	}
 
@@ -245,6 +246,7 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64, version *Version) (*Proof,
 		nibble := path & 0x000000000000000f
 		tree.extendNode(targetNode, nibble, path, depth)
 		tree.extendNode(targetNode, nibble^1, path-nibble+nibble^1, depth)
+
 		if neighborNode == nil {
 			proofs = append(proofs, tree.nilHashes[depth-4])
 		} else {

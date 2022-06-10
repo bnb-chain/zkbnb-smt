@@ -29,7 +29,7 @@ var _ SparseMerkleTree = (*BASSparseMerkleTree)(nil)
 func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, nilHash []byte,
 	opts ...Option) (SparseMerkleTree, error) {
 
-	if maxDepth%4 != 0 {
+	if maxDepth == 0 || maxDepth%4 != 0 {
 		return nil, ErrInvalidDepth
 	}
 

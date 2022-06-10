@@ -153,18 +153,23 @@ func (tree *BASSparseMerkleTree) Get(key uint64, version *Version) ([]byte, erro
 		return nil, ErrVersionTooHigh
 	}
 
-	targetNode := tree.root
-	var depth uint8 = 4
-	for i := 0; i < int(tree.maxDepth)/4; i++ {
-		path := key >> (int(tree.maxDepth) - (i+1)*4)
-		nibble := path & 0x000000000000000f
-		tree.extendNode(targetNode, nibble, path, depth)
-		targetNode = targetNode.Children[nibble]
-
-		depth += 4
+	rlpBytes, err := tree.db.Get(storageFullTreeNodeKey(tree.maxDepth, key))
+	if err != nil {
+		return nil, err
+	}
+	storageTreeNode := &StorageTreeNode{}
+	err = rlp.DecodeBytes(rlpBytes, storageTreeNode)
+	if err != nil {
+		return nil, err
 	}
 
-	return targetNode.Root(), nil
+	for i := len(storageTreeNode.Versions) - 1; i >= 0; i-- {
+		if storageTreeNode.Versions[i].Ver <= *version {
+			return storageTreeNode.Versions[i].Hash, nil
+		}
+	}
+
+	return tree.nilHashes[tree.maxDepth], nil
 }
 
 func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {

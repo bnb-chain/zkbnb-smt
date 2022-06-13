@@ -7,8 +7,8 @@ type (
 		Set(key uint64, val []byte) error
 		IsEmpty() bool
 		Root() []byte
-		GetProof(key uint64, version *Version) (*Proof, error)
-		VerifyProof(proof *Proof, version *Version) bool
+		GetProof(key uint64) (*Proof, error)
+		VerifyProof(proof *Proof) bool
 		LatestVersion() Version
 		Reset()
 		Commit(recentVersion *Version) (Version, error)

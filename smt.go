@@ -214,7 +214,7 @@ func (tree *BASSparseMerkleTree) Root() []byte {
 	return tree.root.Root()
 }
 
-func (tree *BASSparseMerkleTree) GetProof(key uint64, version *Version) (*Proof, error) {
+func (tree *BASSparseMerkleTree) GetProof(key uint64) (*Proof, error) {
 	var proofs [][]byte
 	var helpers []int
 	if tree.IsEmpty() {
@@ -228,18 +228,6 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64, version *Version) (*Proof,
 
 	if key >= 1<<tree.maxDepth {
 		return nil, ErrInvalidKey
-	}
-
-	if version == nil {
-		version = &tree.version
-	}
-
-	if tree.recentVersion > *version {
-		return nil, ErrVersionTooOld
-	}
-
-	if *version > tree.version {
-		return nil, ErrVersionTooHigh
 	}
 
 	targetNode := tree.root
@@ -286,19 +274,7 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64, version *Version) (*Proof,
 	}, nil
 }
 
-func (tree *BASSparseMerkleTree) VerifyProof(proof *Proof, version *Version) bool {
-	if version == nil {
-		version = &tree.version
-	}
-
-	if tree.recentVersion > *version {
-		return false
-	}
-
-	if *version > tree.version {
-		return false
-	}
-
+func (tree *BASSparseMerkleTree) VerifyProof(proof *Proof) bool {
 	if len(proof.MerkleProof) != len(proof.ProofHelper)+1 {
 		return false
 	}

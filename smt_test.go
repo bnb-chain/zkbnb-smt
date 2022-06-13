@@ -47,6 +47,14 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
+	emptyProof, err := smt.GetProof(0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !smt.VerifyProof(emptyProof, nil) {
+		t.Fatal("verify empty proof failed")
+	}
+
 	key1 := uint64(0)
 	key2 := uint64(255)
 	key3 := uint64(213)

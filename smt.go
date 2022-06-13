@@ -250,7 +250,6 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64, version *Version) (*Proof,
 		path := key >> (int(tree.maxDepth) - (i+1)*4)
 		nibble := path & 0x000000000000000f
 		tree.extendNode(targetNode, nibble, path, depth)
-		tree.extendNode(targetNode, nibble^1, path-nibble+nibble^1, depth)
 
 		if neighborNode == nil {
 			proofs = append(proofs, tree.nilHashes[depth-4])

@@ -116,6 +116,12 @@ func (node *TreeNode) Prune(oldestVersion Version) {
 			break
 		}
 	}
+
+	if i > 0 && node.Versions[i].Ver > oldestVersion {
+		node.Versions = node.Versions[i-1:]
+		return
+	}
+
 	node.Versions = node.Versions[i:]
 }
 

@@ -129,6 +129,11 @@ func (b *batch) Write() error {
 	return nil
 }
 
+// ValueSize retrieves the amount of data queued up for writing.
+func (b *batch) ValueSize() int {
+	return b.size
+}
+
 // Reset resets the batch for reuse.
 func (b *batch) Reset() {
 	b.writes = b.writes[:0]

@@ -35,10 +35,11 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 	}
 
 	smt := &BASSparseMerkleTree{
-		maxDepth:  maxDepth,
-		journal:   map[journalKey]*TreeNode{},
-		nilHashes: constuctNilHashes(maxDepth, nilHash, hasher),
-		hasher:    hasher,
+		maxDepth:       maxDepth,
+		journal:        map[journalKey]*TreeNode{},
+		nilHashes:      constuctNilHashes(maxDepth, nilHash, hasher),
+		hasher:         hasher,
+		batchSizeLimit: 100 * 1024,
 	}
 
 	for _, opt := range opts {
@@ -84,15 +85,16 @@ type journalKey struct {
 }
 
 type BASSparseMerkleTree struct {
-	version       Version
-	recentVersion Version
-	root          *TreeNode
-	lastSaveRoot  *TreeNode
-	journal       map[journalKey]*TreeNode
-	maxDepth      uint8
-	nilHashes     *nilHashes
-	hasher        *Hasher
-	db            database.TreeDB
+	version        Version
+	recentVersion  Version
+	root           *TreeNode
+	lastSaveRoot   *TreeNode
+	journal        map[journalKey]*TreeNode
+	maxDepth       uint8
+	nilHashes      *nilHashes
+	hasher         *Hasher
+	db             database.TreeDB
+	batchSizeLimit int
 }
 
 func (tree *BASSparseMerkleTree) initFromStorage() error {
@@ -361,6 +363,12 @@ func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, fullNode *TreeNo
 	if err != nil {
 		return err
 	}
+	if db.ValueSize() > tree.batchSizeLimit {
+		if err := db.Write(); err != nil {
+			return err
+		}
+		db.Reset()
+	}
 	return nil
 }
 
@@ -398,6 +406,7 @@ func (tree *BASSparseMerkleTree) Commit(recentVersion *Version) (Version, error)
 		if err != nil {
 			return tree.version, err
 		}
+		batch.Reset()
 	}
 
 	tree.version = newVersion
@@ -427,6 +436,12 @@ func (tree *BASSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, d
 	err = db.Set(storageFullTreeNodeKey(child.depth, child.path), rlpBytes)
 	if err != nil {
 		return err
+	}
+	if db.ValueSize() > tree.batchSizeLimit {
+		if err := db.Write(); err != nil {
+			return err
+		}
+		db.Reset()
 	}
 
 	for _, subChild := range child.Children {
@@ -470,6 +485,7 @@ func (tree *BASSparseMerkleTree) Rollback(version Version) error {
 		if err != nil {
 			return err
 		}
+		batch.Reset()
 	}
 
 	tree.version = newVersion

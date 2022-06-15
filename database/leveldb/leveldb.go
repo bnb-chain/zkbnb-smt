@@ -166,17 +166,20 @@ type batch struct {
 	namespace []byte
 	db        *leveldb.DB
 	b         *leveldb.Batch
+	size      int
 }
 
 // Put inserts the given value into the batch for later committing.
 func (b *batch) Set(key, value []byte) error {
 	b.b.Put(wrapKey(b.namespace, key), value)
+	b.size += len(value)
 	return nil
 }
 
 // Delete inserts the a key removal into the batch for later committing.
 func (b *batch) Delete(key []byte) error {
 	b.b.Delete(wrapKey(b.namespace, key))
+	b.size += len(key)
 	return nil
 }
 
@@ -185,7 +188,13 @@ func (b *batch) Write() error {
 	return b.db.Write(b.b, nil)
 }
 
+// ValueSize retrieves the amount of data queued up for writing.
+func (b *batch) ValueSize() int {
+	return b.size
+}
+
 // Reset resets the batch for reuse.
 func (b *batch) Reset() {
 	b.b.Reset()
+	b.size = 0
 }

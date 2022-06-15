@@ -55,15 +55,26 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 	return smt, nil
 }
 
-func constuctNilHashes(maxDepth uint8, nilHash []byte, hasher *Hasher) map[uint8][]byte {
-	nilHashes := make(map[uint8][]byte, maxDepth+1)
-	nilHashes[maxDepth] = nilHash
+func constuctNilHashes(maxDepth uint8, nilHash []byte, hasher *Hasher) *nilHashes {
+	hashes := make([][]byte, maxDepth+1)
+	hashes[maxDepth] = nilHash
 	for i := 1; i <= int(maxDepth); i++ {
 		nHash := hasher.Hash(nilHash, nilHash)
-		nilHashes[maxDepth-uint8(i)] = nHash
+		hashes[maxDepth-uint8(i)] = nHash
 		nilHash = nHash
 	}
-	return nilHashes
+	return &nilHashes{hashes}
+}
+
+type nilHashes struct {
+	hashes [][]byte
+}
+
+func (h *nilHashes) Get(depth uint8) []byte {
+	if len(h.hashes)-1 < int(depth) {
+		return nil
+	}
+	return h.hashes[depth]
 }
 
 type journalKey struct {
@@ -78,7 +89,7 @@ type BASSparseMerkleTree struct {
 	lastSaveRoot  *TreeNode
 	journal       map[journalKey]*TreeNode
 	maxDepth      uint8
-	nilHashes     map[uint8][]byte
+	nilHashes     *nilHashes
 	hasher        *Hasher
 	db            database.TreeDB
 }
@@ -170,7 +181,7 @@ func (tree *BASSparseMerkleTree) Get(key uint64, version *Version) ([]byte, erro
 		}
 	}
 
-	return tree.nilHashes[tree.maxDepth], nil
+	return tree.nilHashes.Get(tree.maxDepth), nil
 }
 
 func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
@@ -212,7 +223,7 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 }
 
 func (tree *BASSparseMerkleTree) IsEmpty() bool {
-	return bytes.Equal(tree.root.Root(), tree.nilHashes[0])
+	return bytes.Equal(tree.root.Root(), tree.nilHashes.Get(0))
 }
 
 func (tree *BASSparseMerkleTree) Root() []byte {
@@ -223,9 +234,9 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64) (*Proof, error) {
 	var proofs [][]byte
 	var helpers []int
 	if tree.IsEmpty() {
-		proofs = append(proofs, tree.nilHashes[tree.maxDepth])
+		proofs = append(proofs, tree.nilHashes.Get(tree.maxDepth))
 		for i := tree.maxDepth; i > 0; i-- {
-			proofs = append(proofs, tree.nilHashes[i])
+			proofs = append(proofs, tree.nilHashes.Get(i))
 			helpers = append(helpers, 0)
 		}
 		return &Proof{proofs, helpers}, nil
@@ -245,7 +256,7 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64) (*Proof, error) {
 		tree.extendNode(targetNode, nibble, path, depth)
 
 		if neighborNode == nil {
-			proofs = append(proofs, tree.nilHashes[depth-4])
+			proofs = append(proofs, tree.nilHashes.Get(depth-4))
 		} else {
 			proofs = append(proofs, neighborNode.Root())
 		}
@@ -266,7 +277,7 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64) (*Proof, error) {
 		depth += 4
 	}
 	if neighborNode == nil {
-		proofs = append(proofs, tree.nilHashes[tree.maxDepth])
+		proofs = append(proofs, tree.nilHashes.Get(tree.maxDepth))
 	} else {
 		proofs = append(proofs, neighborNode.Root())
 	}

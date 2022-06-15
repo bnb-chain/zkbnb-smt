@@ -1,22 +1,22 @@
 package bsmt
 
-func NewTreeNode(depth uint8, path uint64, nilHashes map[uint8][]byte, hasher *Hasher) *TreeNode {
+func NewTreeNode(depth uint8, path uint64, nilHashes *nilHashes, hasher *Hasher) *TreeNode {
 	treeNode := &TreeNode{
-		nilHash:      nilHashes[depth],
-		nilChildHash: nilHashes[depth+4],
+		nilHash:      nilHashes.Get(depth),
+		nilChildHash: nilHashes.Get(depth + 4),
 		path:         path,
 		depth:        depth,
 		hasher:       hasher,
 		extended:     true,
 	}
 	for i := 0; i < 2; i++ {
-		treeNode.Internals[i] = nilHashes[depth+1]
+		treeNode.Internals[i] = nilHashes.Get(depth + 1)
 	}
 	for i := 2; i < 6; i++ {
-		treeNode.Internals[i] = nilHashes[depth+2]
+		treeNode.Internals[i] = nilHashes.Get(depth + 2)
 	}
 	for i := 6; i < 13; i++ {
-		treeNode.Internals[i] = nilHashes[depth+3]
+		treeNode.Internals[i] = nilHashes.Get(depth + 3)
 	}
 
 	return treeNode
@@ -165,12 +165,12 @@ type StorageTreeNode struct {
 	Versions  []*VersionInfo       `rlp:"optional"`
 }
 
-func (node *StorageTreeNode) ToTreeNode(depth uint8, path uint64, nilHashes map[uint8][]byte, hasher *Hasher) *TreeNode {
+func (node *StorageTreeNode) ToTreeNode(depth uint8, path uint64, nilHashes *nilHashes, hasher *Hasher) *TreeNode {
 	treeNode := &TreeNode{
 		Internals:    node.Internals,
 		Versions:     node.Versions,
-		nilHash:      nilHashes[depth],
-		nilChildHash: nilHashes[depth+4],
+		nilHash:      nilHashes.Get(depth),
+		nilChildHash: nilHashes.Get(depth + 4),
 		path:         path,
 		depth:        depth,
 		hasher:       hasher,
@@ -180,8 +180,8 @@ func (node *StorageTreeNode) ToTreeNode(depth uint8, path uint64, nilHashes map[
 		if node.Children[i] != nil {
 			treeNode.Children[i] = &TreeNode{
 				Versions:     node.Children[i].Versions,
-				nilHash:      nilHashes[depth+4],
-				nilChildHash: nilHashes[depth+8],
+				nilHash:      nilHashes.Get(depth + 4),
+				nilChildHash: nilHashes.Get(depth + 8),
 			}
 		}
 	}

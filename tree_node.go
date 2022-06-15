@@ -125,10 +125,10 @@ func (node *TreeNode) Prune(oldestVersion Version) {
 }
 
 func (node *TreeNode) Rollback(targetVersion Version) bool {
-	next := false
 	if len(node.Versions) == 0 {
 		return false
 	}
+	next := false
 	i := len(node.Versions) - 1
 	for ; i > 0; i-- {
 		if node.Versions[i].Ver <= targetVersion {

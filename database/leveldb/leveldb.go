@@ -2,6 +2,7 @@ package leveldb
 
 import (
 	"bytes"
+	stdErrors "errors"
 	"sync"
 
 	"github.com/bnb-chain/bas-smt/database"
@@ -123,16 +124,20 @@ func (db *Database) Close() error {
 
 // Has retrieves if a key is present in the key-value store.
 func (db *Database) Has(key []byte) (bool, error) {
-	return db.db.Has(wrapKey(db.namespace, key), nil)
+	has, err := db.db.Has(wrapKey(db.namespace, key), nil)
+	if err != nil && stdErrors.Is(leveldb.ErrNotFound, err) {
+		return has, database.ErrDatabaseNotFound
+	}
+	return has, err
 }
 
 // Get retrieves the given key if it's present in the key-value store.
 func (db *Database) Get(key []byte) ([]byte, error) {
 	dat, err := db.db.Get(wrapKey(db.namespace, key), nil)
-	if err != nil {
-		return nil, err
+	if err != nil && stdErrors.Is(leveldb.ErrNotFound, err) {
+		return nil, database.ErrDatabaseNotFound
 	}
-	return dat, nil
+	return dat, err
 }
 
 // Put inserts the given value into the key-value store.

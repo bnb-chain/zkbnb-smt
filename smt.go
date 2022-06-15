@@ -3,6 +3,7 @@ package bsmt
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 
 	"github.com/ethereum/go-ethereum/rlp"
 
@@ -94,30 +95,45 @@ type BASSparseMerkleTree struct {
 	db            database.TreeDB
 }
 
-func (tree *BASSparseMerkleTree) initFromStorage() {
+func (tree *BASSparseMerkleTree) initFromStorage() error {
 	tree.root = NewTreeNode(0, 0, tree.nilHashes, tree.hasher)
 	// recovery version info
 	buf, err := tree.db.Get(latestVersionKey)
-	if err != nil {
-		return
+	if errors.Is(err, database.ErrDatabaseNotFound) {
+		return nil
 	}
+	if err != nil {
+		return err
+	}
+
 	tree.version = Version(binary.BigEndian.Uint64(buf))
-	buf, _ = tree.db.Get(recentVersionNumberKey)
-	if buf != nil {
+	buf, err = tree.db.Get(recentVersionNumberKey)
+	if err != nil && !errors.Is(err, database.ErrDatabaseNotFound) {
+		return err
+	}
+	if len(buf) > 0 {
 		tree.recentVersion = Version(binary.BigEndian.Uint64(buf))
 	}
 
 	// recovery root node from stroage
 	rlpBytes, err := tree.db.Get(storageFullTreeNodeKey(0, 0))
+	if errors.Is(err, database.ErrDatabaseNotFound) {
+		return nil
+	}
 	if err != nil {
-		return
+		return err
 	}
 	storageTreeNode := &StorageTreeNode{}
 	err = rlp.DecodeBytes(rlpBytes, storageTreeNode)
 	if err != nil {
-		return
+		return err
 	}
 	tree.root = storageTreeNode.ToTreeNode(0, 0, tree.nilHashes, tree.hasher)
+	length := len(tree.root.Versions)
+	if length > 0 && tree.root.Versions[length-1].Ver != tree.version {
+		return ErrUnexpected
+	}
+	return nil
 }
 
 func (tree *BASSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64, depth uint8) {
@@ -131,17 +147,23 @@ func (tree *BASSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64,
 
 }
 
-func (tree *BASSparseMerkleTree) constructNode(node *TreeNode, nibble, path uint64, depth uint8) {
-	rlpBytes, _ := tree.db.Get(storageFullTreeNodeKey(depth, path))
-	if rlpBytes != nil {
-		stroageTreeNode := &StorageTreeNode{}
-		if rlp.DecodeBytes(rlpBytes, stroageTreeNode) == nil {
-			node.Children[nibble] = stroageTreeNode.ToTreeNode(
-				depth, path, tree.nilHashes, tree.hasher)
-			return
-		}
+func (tree *BASSparseMerkleTree) constructNode(node *TreeNode, nibble, path uint64, depth uint8) error {
+	rlpBytes, err := tree.db.Get(storageFullTreeNodeKey(depth, path))
+	if errors.Is(err, database.ErrDatabaseNotFound) {
+		node.Children[nibble] = NewTreeNode(depth, path, tree.nilHashes, tree.hasher)
+		return nil
 	}
-	node.Children[nibble] = NewTreeNode(depth, path, tree.nilHashes, tree.hasher)
+	if err != nil {
+		return err
+	}
+
+	stroageTreeNode := &StorageTreeNode{}
+	if rlp.DecodeBytes(rlpBytes, stroageTreeNode) == nil {
+		node.Children[nibble] = stroageTreeNode.ToTreeNode(
+			depth, path, tree.nilHashes, tree.hasher)
+
+	}
+	return nil
 }
 
 func (tree *BASSparseMerkleTree) Get(key uint64, version *Version) ([]byte, error) {
@@ -166,6 +188,9 @@ func (tree *BASSparseMerkleTree) Get(key uint64, version *Version) ([]byte, erro
 	}
 
 	rlpBytes, err := tree.db.Get(storageFullTreeNodeKey(tree.maxDepth, key))
+	if errors.Is(err, database.ErrDatabaseNotFound) {
+		return nil, ErrNodeNotFound
+	}
 	if err != nil {
 		return nil, err
 	}

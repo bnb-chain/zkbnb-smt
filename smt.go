@@ -187,6 +187,7 @@ func (tree *BASSparseMerkleTree) Get(key uint64, version *Version) ([]byte, erro
 		return nil, ErrVersionTooHigh
 	}
 
+	// TODO: It will be further improved in the future to avoid reading from disk.
 	rlpBytes, err := tree.db.Get(storageFullTreeNodeKey(tree.maxDepth, key))
 	if errors.Is(err, database.ErrDatabaseNotFound) {
 		return nil, ErrNodeNotFound

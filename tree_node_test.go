@@ -18,7 +18,7 @@ func TestTreeNode_Copy(t *testing.T) {
 	node := NewTreeNode(0, 0, nilHashes, hasher)
 	copied := node.Copy()
 	for i := 0; i < len(copied.Children); i++ {
-		copied = copied.setChildren(NewTreeNode(4, uint64(i), nilHashes, hasher), i)
+		copied = copied.setChildren(NewTreeNode(4, uint64(i), nilHashes, hasher), i, 0)
 	}
 	copied.computeInternalHash()
 	copied = copied.set(hasher.Hash(copied.Internals[0], copied.Internals[1]), 0)

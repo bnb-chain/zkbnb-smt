@@ -63,13 +63,50 @@ func (node *TreeNode) newVersion(version *VersionInfo) {
 	node.Versions = append(node.Versions, version)
 }
 
-func (node *TreeNode) setChildren(child *TreeNode, nibble int) *TreeNode {
+func (node *TreeNode) setChildren(child *TreeNode, nibble int, version Version) *TreeNode {
 	copied := node.Copy()
 	copied.Children[nibble] = child
+
+	left, right := copied.nilChildHash, copied.nilChildHash
+	switch nibble % 2 {
+	case 0:
+		if copied.Children[nibble] != nil {
+			left = copied.Children[nibble].Root()
+		}
+		if copied.Children[nibble^1] != nil {
+			right = copied.Children[nibble^1].Root()
+		}
+	case 1:
+		if copied.Children[nibble] != nil {
+			right = copied.Children[nibble].Root()
+		}
+		if copied.Children[nibble^1] != nil {
+			left = copied.Children[nibble^1].Root()
+		}
+	}
+	prefix := 6
+	for i := 4; i >= 1; i >>= 1 {
+		nibble = nibble / 2
+		copied.Internals[prefix+nibble] = copied.hasher.Hash(left, right)
+		switch nibble % 2 {
+		case 0:
+			left = copied.Internals[prefix+nibble]
+			right = copied.Internals[prefix+nibble^1]
+		case 1:
+			right = copied.Internals[prefix+nibble]
+			left = copied.Internals[prefix+nibble^1]
+		}
+		prefix = prefix - i
+	}
+	// update current root node
+	copied.newVersion(&VersionInfo{
+		Ver:  version,
+		Hash: copied.hasher.Hash(copied.Internals[0], copied.Internals[1]),
+	})
 	return copied
 }
 
-// top-down
+// Recompute all internal hashes
 func (node *TreeNode) computeInternalHash() {
 	// leaf node
 	for i := 0; i < 15; i += 2 {

@@ -235,15 +235,8 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 	// recompute root hash
 	for i := len(parentNodes) - 1; i >= 0; i-- {
 		childNibble := key >> (int(tree.maxDepth) - (i+1)*4) & 0x000000000000000f
-		targetNode = parentNodes[i].setChildren(targetNode, int(childNibble))
-		if targetNode.Extended() {
-			targetNode.computeInternalHash()
-			// update current root node
-			targetNode.newVersion(&VersionInfo{
-				Ver:  newVersion,
-				Hash: tree.hasher.Hash(targetNode.Internals[0], targetNode.Internals[1]),
-			})
-		}
+		targetNode = parentNodes[i].setChildren(targetNode, int(childNibble), newVersion)
+
 		tree.journal[journalKey{targetNode.depth, targetNode.path}] = targetNode
 	}
 	tree.root = targetNode

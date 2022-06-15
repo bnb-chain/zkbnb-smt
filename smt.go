@@ -45,11 +45,13 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 	}
 
 	if db == nil {
-		db = memory.NewMemoryDB()
+		smt.db = memory.NewMemoryDB()
+		smt.root = NewTreeNode(0, 0, smt.nilHashes, smt.hasher)
+		return smt, nil
 	}
 
-	recoveryTree(smt, db)
 	smt.db = db
+	smt.initFromStorage()
 	return smt, nil
 }
 
@@ -62,34 +64,6 @@ func constuctNilHashes(maxDepth uint8, nilHash []byte, hasher *Hasher) map[uint8
 		nilHash = nHash
 	}
 	return nilHashes
-}
-
-func recoveryTree(smt *BASSparseMerkleTree, db database.TreeDB) {
-	// init
-	smt.root = NewTreeNode(0, 0, smt.nilHashes, smt.hasher)
-
-	// recovery version info
-	buf, err := db.Get(latestVersionKey)
-	if err != nil {
-		return
-	}
-	smt.version = Version(binary.BigEndian.Uint64(buf))
-	buf, _ = db.Get(recentVersionNumberKey)
-	if buf != nil {
-		smt.recentVersion = Version(binary.BigEndian.Uint64(buf))
-	}
-
-	// recovery root node from stroage
-	rlpBytes, err := db.Get(storageFullTreeNodeKey(0, 0))
-	if err != nil {
-		return
-	}
-	storageTreeNode := &StorageTreeNode{}
-	err = rlp.DecodeBytes(rlpBytes, storageTreeNode)
-	if err != nil {
-		return
-	}
-	smt.root = storageTreeNode.ToTreeNode(0, 0, smt.nilHashes, smt.hasher)
 }
 
 type journalKey struct {
@@ -107,6 +81,32 @@ type BASSparseMerkleTree struct {
 	nilHashes     map[uint8][]byte
 	hasher        *Hasher
 	db            database.TreeDB
+}
+
+func (tree *BASSparseMerkleTree) initFromStorage() {
+	tree.root = NewTreeNode(0, 0, tree.nilHashes, tree.hasher)
+	// recovery version info
+	buf, err := tree.db.Get(latestVersionKey)
+	if err != nil {
+		return
+	}
+	tree.version = Version(binary.BigEndian.Uint64(buf))
+	buf, _ = tree.db.Get(recentVersionNumberKey)
+	if buf != nil {
+		tree.recentVersion = Version(binary.BigEndian.Uint64(buf))
+	}
+
+	// recovery root node from stroage
+	rlpBytes, err := tree.db.Get(storageFullTreeNodeKey(0, 0))
+	if err != nil {
+		return
+	}
+	storageTreeNode := &StorageTreeNode{}
+	err = rlp.DecodeBytes(rlpBytes, storageTreeNode)
+	if err != nil {
+		return
+	}
+	tree.root = storageTreeNode.ToTreeNode(0, 0, tree.nilHashes, tree.hasher)
 }
 
 func (tree *BASSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64, depth uint8) {

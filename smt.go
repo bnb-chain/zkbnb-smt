@@ -53,7 +53,11 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 	}
 
 	smt.db = db
-	return smt, smt.initFromStorage()
+	err := smt.initFromStorage()
+	if err != nil {
+		return nil, err
+	}
+	return smt, nil
 }
 
 func constuctNilHashes(maxDepth uint8, nilHash []byte, hasher *Hasher) *nilHashes {

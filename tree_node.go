@@ -44,7 +44,7 @@ func (node *TreeNode) Root() []byte {
 	return node.Versions[len(node.Versions)-1].Hash
 }
 
-func (node *TreeNode) Set(hash []byte, version Version) *TreeNode {
+func (node *TreeNode) set(hash []byte, version Version) *TreeNode {
 	copied := node.Copy()
 	copied.newVersion(&VersionInfo{
 		Ver:  version,
@@ -63,14 +63,14 @@ func (node *TreeNode) newVersion(version *VersionInfo) {
 	node.Versions = append(node.Versions, version)
 }
 
-func (node *TreeNode) SetChildren(child *TreeNode, nibble int) *TreeNode {
+func (node *TreeNode) setChildren(child *TreeNode, nibble int) *TreeNode {
 	copied := node.Copy()
 	copied.Children[nibble] = child
 	return copied
 }
 
 // top-down
-func (node *TreeNode) ComputeInternalHash(version Version) {
+func (node *TreeNode) computeInternalHash(version Version) {
 	// leaf node
 	for i := 0; i < 15; i += 2 {
 		left, right := node.nilChildHash, node.nilChildHash

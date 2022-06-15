@@ -191,14 +191,14 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 
 		depth += 4
 	}
-	targetNode = targetNode.Set(val, newVersion) // leaf
+	targetNode = targetNode.set(val, newVersion) // leaf
 	tree.journal[journalKey{targetNode.depth, targetNode.path}] = targetNode
 	// recompute root hash
 	for i := len(parentNodes) - 1; i >= 0; i-- {
 		childNibble := key >> (int(tree.maxDepth) - (i+1)*4) & 0x000000000000000f
-		targetNode = parentNodes[i].SetChildren(targetNode, int(childNibble))
+		targetNode = parentNodes[i].setChildren(targetNode, int(childNibble))
 		if targetNode.Extended() {
-			targetNode.ComputeInternalHash(newVersion)
+			targetNode.computeInternalHash(newVersion)
 		}
 		tree.journal[journalKey{targetNode.depth, targetNode.path}] = targetNode
 	}
@@ -377,7 +377,7 @@ func (tree *BASSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, d
 		return nil
 	}
 
-	child.ComputeInternalHash(oldVersion)
+	child.computeInternalHash(oldVersion)
 
 	// persist tree
 	rlpBytes, err := rlp.EncodeToBytes(child.ToStorageTreeNode())

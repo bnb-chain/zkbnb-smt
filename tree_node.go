@@ -70,7 +70,7 @@ func (node *TreeNode) setChildren(child *TreeNode, nibble int) *TreeNode {
 }
 
 // top-down
-func (node *TreeNode) computeInternalHash(version Version) {
+func (node *TreeNode) computeInternalHash() {
 	// leaf node
 	for i := 0; i < 15; i += 2 {
 		left, right := node.nilChildHash, node.nilChildHash
@@ -86,11 +86,6 @@ func (node *TreeNode) computeInternalHash(version Version) {
 	for i := 13; i > 1; i -= 2 {
 		node.Internals[i/2-1] = node.hasher.Hash(node.Internals[i-1], node.Internals[i])
 	}
-	// update current root node
-	node.newVersion(&VersionInfo{
-		Ver:  version,
-		Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
-	})
 }
 
 func (node *TreeNode) Extended() bool {
@@ -128,16 +123,16 @@ func (node *TreeNode) Rollback(targetVersion Version) bool {
 	if len(node.Versions) == 0 {
 		return false
 	}
-	next := false
+	var next bool
 	i := len(node.Versions) - 1
-	for ; i > 0; i-- {
+	for ; i >= 0; i-- {
 		if node.Versions[i].Ver <= targetVersion {
 			break
 		}
 		next = true
 	}
-	node.Versions = node.Versions[:i]
-
+	node.Versions = node.Versions[:i+1]
+	node.computeInternalHash()
 	return next
 }
 

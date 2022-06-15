@@ -15,7 +15,7 @@ func NewTreeNode(depth uint8, path uint64, nilHashes *nilHashes, hasher *Hasher)
 	for i := 2; i < 6; i++ {
 		treeNode.Internals[i] = nilHashes.Get(depth + 2)
 	}
-	for i := 6; i < 13; i++ {
+	for i := 6; i < 14; i++ {
 		treeNode.Internals[i] = nilHashes.Get(depth + 3)
 	}
 

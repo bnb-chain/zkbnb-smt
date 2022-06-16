@@ -51,7 +51,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !smt.VerifyProof(emptyProof) {
+	if !smt.VerifyProof(0, emptyProof) {
 		t.Fatal("verify empty proof failed")
 	}
 
@@ -107,7 +107,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	if !smt.VerifyProof(proof) {
+	if !smt.VerifyProof(key1, proof) {
 		t.Fatal("verify proof1 failed")
 	}
 
@@ -116,7 +116,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	if !smt.VerifyProof(proof) {
+	if !smt.VerifyProof(key2, proof) {
 		t.Fatal("verify proof2 failed")
 	}
 
@@ -125,7 +125,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	if !smt.VerifyProof(proof) {
+	if !smt.VerifyProof(key3, proof) {
 		t.Fatal("verify proof3 failed")
 	}
 
@@ -164,7 +164,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	if !smt.VerifyProof(proof) {
+	if !smt.VerifyProof(key1, proof) {
 		t.Fatal("verify proof1 failed")
 	}
 
@@ -173,7 +173,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	if !smt.VerifyProof(proof) {
+	if !smt.VerifyProof(key2, proof) {
 		t.Fatal("verify proof2 failed")
 	}
 
@@ -182,7 +182,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	if !smt.VerifyProof(proof) {
+	if !smt.VerifyProof(key3, proof) {
 		t.Fatal("verify proof2 failed")
 	}
 }
@@ -224,6 +224,14 @@ func testRollback(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
+	proof2, err := smt.GetProof(key2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !smt.VerifyProof(key2, proof2) {
+		t.Fatal("verify proof2 failed")
+	}
+
 	smt.Set(key3, val3)
 	version2, err := smt.Commit(nil)
 	if err != nil {
@@ -243,6 +251,10 @@ func testRollback(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	_, err = smt.Get(key3, &version2)
 	if !errors.Is(err, ErrVersionTooHigh) {
 		t.Fatal(err)
+	}
+
+	if !smt.VerifyProof(key2, proof2) {
+		t.Fatal("verify proof2 after rollback failed")
 	}
 
 	// restore tree from db

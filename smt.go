@@ -259,16 +259,15 @@ func (tree *BASSparseMerkleTree) Root() []byte {
 	return tree.root.Root()
 }
 
-func (tree *BASSparseMerkleTree) GetProof(key uint64) (*Proof, error) {
+func (tree *BASSparseMerkleTree) GetProof(key uint64) (Proof, error) {
 	var proofs [][]byte
 	var helpers []int
 	if tree.IsEmpty() {
 		proofs = append(proofs, tree.nilHashes.Get(tree.maxDepth))
 		for i := tree.maxDepth; i > 0; i-- {
 			proofs = append(proofs, tree.nilHashes.Get(i))
-			helpers = append(helpers, 0)
 		}
-		return &Proof{proofs, helpers}, nil
+		return proofs, nil
 	}
 
 	if key >= 1<<tree.maxDepth {
@@ -315,25 +314,48 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64) (*Proof, error) {
 	proofs = append(proofs, targetNode.Root())
 	helpers = append(helpers, int(key)%2)
 
-	return &Proof{
-		MerkleProof: utils.ReverseBytes(proofs[1:]),
-		ProofHelper: utils.ReverseInts(helpers[1:]),
-	}, nil
+	return utils.ReverseBytes(proofs[1:]), nil
 }
 
-func (tree *BASSparseMerkleTree) VerifyProof(proof *Proof) bool {
-	if len(proof.MerkleProof) != len(proof.ProofHelper)+1 {
+func (tree *BASSparseMerkleTree) VerifyProof(key uint64, proof Proof) bool {
+	if key >= 1<<tree.maxDepth {
+		return false
+	}
+
+	var depth uint8 = 4
+	var helpers []int
+
+	for i := 0; i < int(tree.maxDepth)/4; i++ {
+		path := key >> (int(tree.maxDepth) - (i+1)*4)
+		nibble := path & 0x000000000000000f
+
+		helpers = append(helpers, int(path)/16%2)
+		index := 0
+		for j := 0; j < 3; j++ {
+			// nibble / 8
+			// nibble / 4
+			// nibble / 2
+			inc := int(nibble) / (1 << (3 - j))
+			helpers = append(helpers, inc%2)
+			index += 1 << (j + 1)
+		}
+
+		depth += 4
+	}
+	helpers = append(helpers, int(key)%2)
+	helpers = utils.ReverseInts(helpers[1:])
+	if len(proof) != len(helpers)+1 {
 		return false
 	}
 
 	root := tree.Root()
-	node := proof.MerkleProof[0]
-	for i := 1; i < len(proof.MerkleProof); i++ {
-		switch proof.ProofHelper[i-1] {
+	node := proof[0]
+	for i := 1; i < len(proof); i++ {
+		switch helpers[i-1] {
 		case 0:
-			node = tree.hasher.Hash(node, proof.MerkleProof[i])
+			node = tree.hasher.Hash(node, proof[i])
 		case 1:
-			node = tree.hasher.Hash(proof.MerkleProof[i], node)
+			node = tree.hasher.Hash(proof[i], node)
 		default:
 			return false
 		}

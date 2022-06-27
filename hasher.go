@@ -2,6 +2,12 @@ package bsmt
 
 import "hash"
 
+func NewHasher(hasher hash.Hash) *Hasher {
+	return &Hasher{
+		hasher: hasher,
+	}
+}
+
 type Hasher struct {
 	hasher hash.Hash
 }

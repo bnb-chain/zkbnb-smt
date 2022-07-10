@@ -6,12 +6,16 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/alicebob/miniredis/v2"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/go-redis/redis/v8"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/storage"
+
 	"github.com/bnb-chain/bas-smt/database"
 	wrappedLevelDB "github.com/bnb-chain/bas-smt/database/leveldb"
 	"github.com/bnb-chain/bas-smt/database/memory"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/storage"
+	wrappedRedis "github.com/bnb-chain/bas-smt/database/redis"
 )
 
 var (
@@ -28,7 +32,13 @@ func prepareEnv(t *testing.T) []testEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := redis.NewClient(&redis.Options{
+		Addr: mr.Addr(),
+	})
 	return []testEnv{
 		{
 			hasher: &Hasher{sha256.New()},
@@ -37,6 +47,10 @@ func prepareEnv(t *testing.T) []testEnv {
 		{
 			hasher: &Hasher{sha256.New()},
 			db:     wrappedLevelDB.WrapWithNamespace(wrappedLevelDB.NewFromExistLevelDB(db), "test"),
+		},
+		{
+			hasher: &Hasher{sha256.New()},
+			db:     wrappedRedis.WrapWithNamespace(wrappedRedis.NewFromExistRedisClient(client), "test"),
 		},
 	}
 }

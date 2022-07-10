@@ -3,7 +3,6 @@ package leveldb
 import (
 	"bytes"
 	stdErrors "errors"
-	"sync"
 
 	"github.com/bnb-chain/bas-smt/database"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -30,7 +29,6 @@ const (
 type Database struct {
 	namespace []byte
 	db        *leveldb.DB // LevelDB instance
-	quitLock  sync.Mutex  // Mutex protecting the quit channel access
 }
 
 // New returns a wrapped LevelDB object. The namespace is the prefix that the datastore.
@@ -113,12 +111,9 @@ func wrapKey(namespace, key []byte) []byte {
 	return key
 }
 
-// Close stops the metrics collection, flushes any pending data to disk and closes
+// Close flushes any pending data to disk and closes
 // all io accesses to the underlying key-value store.
 func (db *Database) Close() error {
-	db.quitLock.Lock()
-	defer db.quitLock.Unlock()
-
 	return db.db.Close()
 }
 

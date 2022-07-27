@@ -399,7 +399,7 @@ func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, fullNode *TreeNo
 
 func (tree *BASSparseMerkleTree) Commit(recentVersion *Version) (Version, error) {
 	newVersion := tree.version + 1
-	if recentVersion != nil && *recentVersion >= tree.version {
+	if recentVersion != nil && *recentVersion >= newVersion {
 		return tree.version, ErrVersionTooHigh
 	}
 	if tree.db != nil {

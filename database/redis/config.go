@@ -77,12 +77,4 @@ type RedisConfig struct {
 	// but idle connections are still discarded by the client
 	// if IdleTimeout is set.
 	IdleCheckFrequency time.Duration
-
-	// Enable prometheus exproter
-	Metrics *MetricsConfig
-}
-
-type MetricsConfig struct {
-	InstanceName string
-	Namespace    string
 }

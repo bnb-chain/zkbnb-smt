@@ -261,9 +261,7 @@ func (tree *BASSparseMerkleTree) Root() []byte {
 
 func (tree *BASSparseMerkleTree) GetProof(key uint64) (Proof, error) {
 	var proofs [][]byte
-	var helpers []int
 	if tree.IsEmpty() {
-		proofs = append(proofs, tree.nilHashes.Get(tree.maxDepth))
 		for i := tree.maxDepth; i > 0; i-- {
 			proofs = append(proofs, tree.nilHashes.Get(i))
 		}
@@ -285,12 +283,6 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64) (Proof, error) {
 			return nil, err
 		}
 
-		if neighborNode == nil {
-			proofs = append(proofs, tree.nilHashes.Get(depth-4))
-		} else {
-			proofs = append(proofs, neighborNode.Root())
-		}
-		helpers = append(helpers, int(path)/16%2)
 		index := 0
 		for j := 0; j < 3; j++ {
 			// nibble / 8
@@ -298,29 +290,37 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64) (Proof, error) {
 			// nibble / 2
 			inc := int(nibble) / (1 << (3 - j))
 			proofs = append(proofs, targetNode.Internals[(index+inc)^1])
-			helpers = append(helpers, inc%2)
+
 			index += 1 << (j + 1)
 		}
 
 		neighborNode = targetNode.Children[nibble^1]
 		targetNode = targetNode.Children[nibble]
+		if neighborNode == nil {
+			proofs = append(proofs, tree.nilHashes.Get(depth))
+		} else {
+			proofs = append(proofs, neighborNode.Root())
+		}
+
 		depth += 4
 	}
-	if neighborNode == nil {
-		proofs = append(proofs, tree.nilHashes.Get(tree.maxDepth))
-	} else {
-		proofs = append(proofs, neighborNode.Root())
-	}
-	proofs = append(proofs, targetNode.Root())
-	helpers = append(helpers, int(key)%2)
 
-	return utils.ReverseBytes(proofs[1:]), nil
+	return utils.ReverseBytes(proofs[:]), nil
 }
 
 func (tree *BASSparseMerkleTree) VerifyProof(key uint64, proof Proof) bool {
 	if key >= 1<<tree.maxDepth {
 		return false
 	}
+
+	keyVal, err := tree.Get(key, nil)
+	if err != nil && !errors.Is(err, ErrNodeNotFound) && !errors.Is(err, ErrEmptyRoot) {
+		return false
+	}
+	if len(keyVal) == 0 {
+		keyVal = tree.nilHashes.Get(tree.maxDepth)
+	}
+	proof = append([][]byte{keyVal}, proof...)
 
 	var depth uint8 = 4
 	var helpers []int

@@ -85,8 +85,10 @@ func NewCustom(file string, namespace string, customize func(options *opt.Option
 // WrapWithNamespace returns a wrapped LevelDB object.
 // The namespace is the prefix that the datastore.
 func WrapWithNamespace(db *Database, namespace string) *Database {
-	db.namespace = []byte(namespace)
-	return db
+	return &Database{
+		namespace: []byte(namespace),
+		db:        db.db,
+	}
 }
 
 // configureOptions sets some default options, then runs the provided setter.

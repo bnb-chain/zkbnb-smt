@@ -89,8 +89,10 @@ func NewFromExistRedisClient(db RedisClient) *Database {
 // WrapWithNamespace returns a wrapped Redis object.
 // The namespace is the prefix that the datastore.
 func WrapWithNamespace(db *Database, namespace string) *Database {
-	db.namespace = []byte(namespace)
-	return db
+	return &Database{
+		namespace: []byte(namespace),
+		db:        db.db,
+	}
 }
 
 type Database struct {

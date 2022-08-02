@@ -3,8 +3,9 @@ package bsmt
 import (
 	"bytes"
 	"crypto/sha256"
-	"errors"
 	"testing"
+
+	"github.com/pkg/errors"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/ethereum/go-ethereum/common"

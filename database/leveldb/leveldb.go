@@ -2,7 +2,8 @@ package leveldb
 
 import (
 	"bytes"
-	stdErrors "errors"
+
+	stdErrors "github.com/pkg/errors"
 
 	"github.com/bnb-chain/bas-smt/database"
 	"github.com/syndtr/goleveldb/leveldb"

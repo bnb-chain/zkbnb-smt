@@ -3,7 +3,8 @@ package redis
 import (
 	"bytes"
 	"context"
-	stdErrors "errors"
+
+	stdErrors "github.com/pkg/errors"
 
 	"github.com/bnb-chain/bas-smt/database"
 	"github.com/bnb-chain/bas-smt/utils"

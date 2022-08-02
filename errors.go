@@ -1,6 +1,6 @@
 package bsmt
 
-import "errors"
+import "github.com/pkg/errors"
 
 var (
 	ErrEmptyRoot = errors.New("empty root")

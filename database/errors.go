@@ -1,6 +1,6 @@
 package database
 
-import "errors"
+import "github.com/pkg/errors"
 
 var (
 	// ErrDatabaseClosed is returned if a database was already closed at the

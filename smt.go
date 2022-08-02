@@ -3,9 +3,9 @@ package bsmt
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/pkg/errors"
 
 	"github.com/bnb-chain/bas-smt/database"
 	"github.com/bnb-chain/bas-smt/database/memory"
@@ -139,7 +139,8 @@ func (tree *BASSparseMerkleTree) initFromStorage() error {
 	tree.root = storageTreeNode.ToTreeNode(0, 0, tree.nilHashes, tree.hasher)
 	length := len(tree.root.Versions)
 	if length > 0 && tree.root.Versions[length-1].Ver != tree.version {
-		return ErrVersionMismatched
+		return errors.Wrapf(ErrVersionMismatched,
+			"tree.version: %d, database: %d", tree.root.Versions[length-1].Ver, tree.version)
 	}
 	return nil
 }

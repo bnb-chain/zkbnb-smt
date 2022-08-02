@@ -92,6 +92,13 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for i := 0; i < 100; i++ {
+		// test commit nil data
+		version, err = smt.Commit(&version)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	hash1, err := smt.Get(key1, &version)
 	if err != nil {
@@ -198,7 +205,27 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	}
 
 	if !smt.VerifyProof(key3, proof) {
-		t.Fatal("verify proof2 failed")
+		t.Fatal("verify proof3 failed")
+	}
+
+	key4 := uint64(1)
+	val4 := hasher.Hash([]byte("test4"))
+	err = smt2.Set(key4, val4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = smt2.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proof, err = smt2.GetProof(key4)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !smt2.VerifyProof(key4, proof) {
+		t.Fatal("verify proof4 failed")
 	}
 }
 

@@ -137,11 +137,6 @@ func (tree *BASSparseMerkleTree) initFromStorage() error {
 		return err
 	}
 	tree.root = storageTreeNode.ToTreeNode(0, 0, tree.nilHashes, tree.hasher)
-	length := len(tree.root.Versions)
-	if length > 0 && tree.root.Versions[length-1].Ver != tree.version {
-		return errors.Wrapf(ErrVersionMismatched,
-			"tree.version: %d, database: %d", tree.root.Versions[length-1].Ver, tree.version)
-	}
 	return nil
 }
 

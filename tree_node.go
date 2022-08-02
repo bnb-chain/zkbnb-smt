@@ -220,7 +220,7 @@ func (node *StorageTreeNode) ToTreeNode(depth uint8, path uint64, nilHashes *nil
 		extended:     true,
 	}
 	for i := 0; i < 16; i++ {
-		if node.Children[i] != nil {
+		if node.Children[i] != nil && len(node.Children[i].Versions) > 0 {
 			treeNode.Children[i] = &TreeNode{
 				Versions:     node.Children[i].Versions,
 				nilHash:      nilHashes.Get(depth + 4),

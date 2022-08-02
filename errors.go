@@ -11,6 +11,8 @@ var (
 
 	ErrNodeNotFound = errors.New("tree node not found")
 
+	ErrVersionMismatched = errors.New("the version is mismatched with the database")
+
 	ErrUnexpected = errors.New("unexpected error")
 
 	ErrInvalidKey = errors.New("invalid key")

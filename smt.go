@@ -15,14 +15,14 @@ import (
 var (
 	latestVersionKey          = []byte(`latestVersion`)
 	recentVersionNumberKey    = []byte(`recentVersionNumber`)
-	storaegFullTreeNodePrefix = []byte(`t`)
+	storageFullTreeNodePrefix = []byte(`t`)
 	sep                       = []byte(`:`)
 )
 
 func storageFullTreeNodeKey(depth uint8, path uint64) []byte {
 	pathBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(pathBuf, path)
-	return bytes.Join([][]byte{storaegFullTreeNodePrefix, {depth}, pathBuf}, sep)
+	return bytes.Join([][]byte{storageFullTreeNodePrefix, {depth}, pathBuf}, sep)
 }
 
 var _ SparseMerkleTree = (*BASSparseMerkleTree)(nil)
@@ -37,7 +37,7 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 	smt := &BASSparseMerkleTree{
 		maxDepth:       maxDepth,
 		journal:        map[journalKey]*TreeNode{},
-		nilHashes:      constuctNilHashes(maxDepth, nilHash, hasher),
+		nilHashes:      constructNilHashes(maxDepth, nilHash, hasher),
 		hasher:         hasher,
 		batchSizeLimit: 100 * 1024,
 	}
@@ -60,7 +60,7 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 	return smt, nil
 }
 
-func constuctNilHashes(maxDepth uint8, nilHash []byte, hasher *Hasher) *nilHashes {
+func constructNilHashes(maxDepth uint8, nilHash []byte, hasher *Hasher) *nilHashes {
 	hashes := make([][]byte, maxDepth+1)
 	hashes[maxDepth] = nilHash
 	for i := 1; i <= int(maxDepth); i++ {
@@ -110,8 +110,10 @@ func (tree *BASSparseMerkleTree) initFromStorage() error {
 	if err != nil {
 		return err
 	}
+	if len(buf) > 0 {
+		tree.version = Version(binary.BigEndian.Uint64(buf))
+	}
 
-	tree.version = Version(binary.BigEndian.Uint64(buf))
 	buf, err = tree.db.Get(recentVersionNumberKey)
 	if err != nil && !errors.Is(err, database.ErrDatabaseNotFound) {
 		return err
@@ -120,7 +122,7 @@ func (tree *BASSparseMerkleTree) initFromStorage() error {
 		tree.recentVersion = Version(binary.BigEndian.Uint64(buf))
 	}
 
-	// recovery root node from stroage
+	// recovery root node from storage
 	rlpBytes, err := tree.db.Get(storageFullTreeNodeKey(0, 0))
 	if errors.Is(err, database.ErrDatabaseNotFound) {
 		return nil
@@ -136,7 +138,7 @@ func (tree *BASSparseMerkleTree) initFromStorage() error {
 	tree.root = storageTreeNode.ToTreeNode(0, 0, tree.nilHashes, tree.hasher)
 	length := len(tree.root.Versions)
 	if length > 0 && tree.root.Versions[length-1].Ver != tree.version {
-		return ErrUnexpected
+		return ErrVersionMismatched
 	}
 	return nil
 }
@@ -165,9 +167,9 @@ func (tree *BASSparseMerkleTree) constructNode(node *TreeNode, nibble, path uint
 		return err
 	}
 
-	stroageTreeNode := &StorageTreeNode{}
-	if rlp.DecodeBytes(rlpBytes, stroageTreeNode) == nil {
-		node.Children[nibble] = stroageTreeNode.ToTreeNode(
+	storageTreeNode := &StorageTreeNode{}
+	if rlp.DecodeBytes(rlpBytes, storageTreeNode) == nil {
+		node.Children[nibble] = storageTreeNode.ToTreeNode(
 			depth, path, tree.nilHashes, tree.hasher)
 
 	}

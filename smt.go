@@ -57,6 +57,7 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 	if err != nil {
 		return nil, err
 	}
+	smt.lastSaveRoot = smt.root
 	return smt, nil
 }
 

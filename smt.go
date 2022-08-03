@@ -10,6 +10,7 @@ import (
 
 	"github.com/bnb-chain/bas-smt/database"
 	"github.com/bnb-chain/bas-smt/database/memory"
+	"github.com/bnb-chain/bas-smt/metrics"
 	"github.com/bnb-chain/bas-smt/utils"
 )
 
@@ -63,6 +64,11 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 		return nil, err
 	}
 	smt.lastSaveRoot = smt.root
+
+	if smt.metrics != nil {
+		smt.metrics.GCThreshold(smt.gcStatus.threshold)
+	}
+
 	return smt, nil
 }
 
@@ -168,6 +174,8 @@ type BASSparseMerkleTree struct {
 	db               database.TreeDB
 	batchSizeLimit   int
 	gcStatus         *gcStatus
+
+	metrics metrics.Metrics
 }
 
 func (tree *BASSparseMerkleTree) initFromStorage() error {
@@ -488,6 +496,7 @@ func (tree *BASSparseMerkleTree) Commit(recentVersion *Version) (Version, error)
 	}
 
 	size := uint64(0)
+	journalSize := len(tree.journal)
 	if tree.db != nil {
 		// write tree nodes, prune old version
 		batch := tree.db.NewBatch()
@@ -530,11 +539,21 @@ func (tree *BASSparseMerkleTree) Commit(recentVersion *Version) (Version, error)
 	if releaseVersion := tree.gcStatus.pop(currentSize); releaseVersion > 0 {
 		currentSize = tree.root.release(releaseVersion)
 	}
-	tree.gcStatus.add(tree.recentVersion, currentSize)
+	tree.gcStatus.add(tree.version, currentSize)
 	tree.journal = make(map[journalKey]*TreeNode)
 	tree.lastSaveRoot = tree.root
 	tree.lastSaveRootSize = originSize
 	tree.rootSize = currentSize
+
+	if tree.metrics != nil {
+		tree.metrics.CommitNum(journalSize)
+		tree.metrics.ChangeSize(size)
+		tree.metrics.CurrentSize(currentSize)
+		tree.metrics.Version(uint64(tree.version))
+		tree.metrics.PrunedVersion(uint64(tree.recentVersion))
+		tree.collectGCMetrics()
+	}
+
 	return newVersion, nil
 }
 
@@ -591,6 +610,7 @@ func (tree *BASSparseMerkleTree) Rollback(version Version) error {
 	tree.Reset()
 
 	newVersion := version
+	originSize := tree.rootSize
 	size := tree.rootSize
 	if tree.db != nil {
 		batch := tree.db.NewBatch()
@@ -615,5 +635,24 @@ func (tree *BASSparseMerkleTree) Rollback(version Version) error {
 
 	tree.version = newVersion
 	tree.rootSize = size
+
+	if tree.metrics != nil {
+		tree.metrics.ChangeSize(originSize - size)
+		tree.metrics.CurrentSize(size)
+		tree.metrics.Version(uint64(tree.version))
+		tree.metrics.PrunedVersion(uint64(tree.recentVersion))
+	}
 	return nil
+}
+
+func (tree *BASSparseMerkleTree) collectGCMetrics() {
+	tree.metrics.LatestGCVersion(uint64(tree.gcStatus.latestGCVersion))
+	var gcVersions [10]*metrics.GCVersion
+	for i := range tree.gcStatus.versions {
+		gcVersions[i] = &metrics.GCVersion{
+			Version: uint64(tree.gcStatus.versions[i]),
+			Size:    uint64(tree.gcStatus.sizes[i]),
+		}
+	}
+	tree.metrics.GCVersions(gcVersions)
 }

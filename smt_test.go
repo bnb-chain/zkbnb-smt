@@ -66,7 +66,7 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		t.Fatal(err)
 	}
 
-	emptyProof, err := smt.GetProof(0)
+	emptyProof, err := smt.GetProof(255)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,6 +109,14 @@ func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+
+	emptyProof, err = smt.GetProof(44)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !smt.VerifyProof(44, emptyProof) {
+		t.Fatal("verify empty proof failed")
 	}
 
 	hash1, err := smt.Get(key1, &version)

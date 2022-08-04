@@ -362,7 +362,7 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64) (Proof, error) {
 	for i := 0; i < int(tree.maxDepth)/4; i++ {
 		path := key >> (int(tree.maxDepth) - (i+1)*4)
 		nibble := path & 0x000000000000000f
-		if err := tree.extendNode(targetNode, nibble, path, depth, false); err != nil {
+		if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {
 			return nil, err
 		}
 		index := 0

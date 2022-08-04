@@ -5,10 +5,12 @@ import (
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/rlp"
+	sysMemory "github.com/pbnjay/memory"
 	"github.com/pkg/errors"
 
 	"github.com/bnb-chain/bas-smt/database"
 	"github.com/bnb-chain/bas-smt/database/memory"
+	"github.com/bnb-chain/bas-smt/metrics"
 	"github.com/bnb-chain/bas-smt/utils"
 )
 
@@ -40,6 +42,10 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 		nilHashes:      constructNilHashes(maxDepth, nilHash, hasher),
 		hasher:         hasher,
 		batchSizeLimit: 100 * 1024,
+		gcStatus: &gcStatus{
+			threshold: sysMemory.TotalMemory() / 8,
+			segment:   sysMemory.TotalMemory() / 8 / 10,
+		},
 	}
 
 	for _, opt := range opts {
@@ -58,6 +64,11 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 		return nil, err
 	}
 	smt.lastSaveRoot = smt.root
+
+	if smt.metrics != nil {
+		smt.metrics.GCThreshold(smt.gcStatus.threshold)
+	}
+
 	return smt, nil
 }
 
@@ -88,17 +99,83 @@ type journalKey struct {
 	path  uint64
 }
 
+// status for GC.
+// In the Commit() stage, the version and releasable size will be recorded,
+// the size of the current version tree exceeds the threshold and starts to trigger GC.
+// The recorded size of the version is divided into 10 stages of threshold,
+// each 10% is a partition, and if it exceeds 100%, it is recorded in the last partition.
+// When the GC is triggered, the collection will start from the minimum collection size.
+type gcStatus struct {
+	versions        [10]Version
+	sizes           [10]uint64
+	threshold       uint64
+	segment         uint64
+	latestGCVersion Version
+}
+
+func (stat *gcStatus) add(version Version, size uint64) {
+	if version == 0 || size == 0 {
+		return
+	}
+	index := (size / stat.segment)
+	if index > 9 {
+		index = 9
+	}
+	stat.sizes[index] = size
+	stat.versions[index] = version
+}
+
+func (stat *gcStatus) pop(currentSize uint64) Version {
+	if currentSize < stat.threshold {
+		return 0
+	}
+
+	var (
+		except, maximal Version
+	)
+	for i := 0; i < len(stat.sizes); i++ {
+		if stat.sizes[i] > 0 {
+			maximal = stat.versions[i]
+		}
+		if except == 0 && currentSize-stat.sizes[i] < stat.threshold {
+			except = stat.versions[i]
+			stat.clean(i)
+			break
+		}
+	}
+
+	if except > 0 {
+		stat.latestGCVersion = except
+		return except
+	}
+	stat.clean(9)
+	stat.latestGCVersion = maximal
+	return maximal
+}
+
+func (stat *gcStatus) clean(index int) {
+	for i := 0; i <= index; i++ {
+		stat.sizes[i] = 0
+		stat.versions[i] = 0
+	}
+}
+
 type BASSparseMerkleTree struct {
-	version        Version
-	recentVersion  Version
-	root           *TreeNode
-	lastSaveRoot   *TreeNode
-	journal        map[journalKey]*TreeNode
-	maxDepth       uint8
-	nilHashes      *nilHashes
-	hasher         *Hasher
-	db             database.TreeDB
-	batchSizeLimit int
+	version          Version
+	recentVersion    Version
+	root             *TreeNode
+	rootSize         uint64
+	lastSaveRoot     *TreeNode
+	lastSaveRootSize uint64
+	journal          map[journalKey]*TreeNode
+	maxDepth         uint8
+	nilHashes        *nilHashes
+	hasher           *Hasher
+	db               database.TreeDB
+	batchSizeLimit   int
+	gcStatus         *gcStatus
+
+	metrics metrics.Metrics
 }
 
 func (tree *BASSparseMerkleTree) initFromStorage() error {
@@ -137,24 +214,23 @@ func (tree *BASSparseMerkleTree) initFromStorage() error {
 		return err
 	}
 	tree.root = storageTreeNode.ToTreeNode(0, 0, tree.nilHashes, tree.hasher)
+
+	tree.rootSize = tree.root.size()
+	for i := 0; i < len(tree.root.Children); i++ {
+		if tree.root.Children[i] != nil {
+			tree.rootSize += uint64(versionSize * len(tree.root.Children[i].Versions))
+		}
+	}
+
 	return nil
 }
 
 func (tree *BASSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64, depth uint8) error {
-	if node.Children[nibble] == nil {
-		node.Children[nibble] = NewTreeNode(depth, path, tree.nilHashes, tree.hasher)
+	if node.Children[nibble] != nil &&
+		!node.Children[nibble].IsTemporary() {
+		return nil
 	}
-	if depth < tree.maxDepth && // no need to extend leaf nodes
-		!node.Children[nibble].Extended() {
-		err := tree.constructNode(node, nibble, path, depth)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
-func (tree *BASSparseMerkleTree) constructNode(node *TreeNode, nibble, path uint64, depth uint8) error {
 	rlpBytes, err := tree.db.Get(storageFullTreeNodeKey(depth, path))
 	if errors.Is(err, database.ErrDatabaseNotFound) {
 		node.Children[nibble] = NewTreeNode(depth, path, tree.nilHashes, tree.hasher)
@@ -165,12 +241,18 @@ func (tree *BASSparseMerkleTree) constructNode(node *TreeNode, nibble, path uint
 	}
 
 	storageTreeNode := &StorageTreeNode{}
-	if rlp.DecodeBytes(rlpBytes, storageTreeNode) == nil {
-		node.Children[nibble] = storageTreeNode.ToTreeNode(
-			depth, path, tree.nilHashes, tree.hasher)
-
+	err = rlp.DecodeBytes(rlpBytes, storageTreeNode)
+	if err != nil {
+		return err
 	}
+	node.Children[nibble] = storageTreeNode.ToTreeNode(
+		depth, path, tree.nilHashes, tree.hasher)
+
 	return nil
+}
+
+func (tree *BASSparseMerkleTree) Size() uint64 {
+	return tree.rootSize
 }
 
 func (tree *BASSparseMerkleTree) Get(key uint64, version *Version) ([]byte, error) {
@@ -281,7 +363,6 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64) (Proof, error) {
 		if err := tree.extendNode(targetNode, nibble, path, depth); err != nil {
 			return nil, err
 		}
-
 		index := 0
 		for j := 0; j < 3; j++ {
 			// nibble / 8
@@ -289,7 +370,6 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64) (Proof, error) {
 			// nibble / 2
 			inc := int(nibble) / (1 << (3 - j))
 			proofs = append(proofs, targetNode.Internals[(index+inc)^1])
-
 			index += 1 << (j + 1)
 		}
 
@@ -328,7 +408,10 @@ func (tree *BASSparseMerkleTree) VerifyProof(key uint64, proof Proof) bool {
 		path := key >> (int(tree.maxDepth) - (i+1)*4)
 		nibble := path & 0x000000000000000f
 
-		helpers = append(helpers, int(path)/16%2)
+		if i > 0 { // ignore the root node
+			helpers = append(helpers, int(path)/16%2)
+		}
+
 		index := 0
 		for j := 0; j < 3; j++ {
 			// nibble / 8
@@ -342,7 +425,7 @@ func (tree *BASSparseMerkleTree) VerifyProof(key uint64, proof Proof) bool {
 		depth += 4
 	}
 	helpers = append(helpers, int(key)%2)
-	helpers = utils.ReverseInts(helpers[1:])
+	helpers = utils.ReverseInts(helpers)
 	if len(proof) != len(helpers)+1 {
 		return false
 	}
@@ -370,30 +453,40 @@ func (tree *BASSparseMerkleTree) LatestVersion() Version {
 func (tree *BASSparseMerkleTree) Reset() {
 	tree.journal = make(map[journalKey]*TreeNode)
 	tree.root = tree.lastSaveRoot
+	tree.rootSize = tree.lastSaveRootSize
 }
 
-func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, fullNode *TreeNode, version Version, recentVersion *Version) error {
-	// prune
+func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, fullNode *TreeNode, version Version, recentVersion *Version) (uint64, error) {
+	changed := uint64(0)
+	if fullNode.previousVersion() > tree.gcStatus.latestGCVersion {
+		// If the previous version is greater than the last GC version,
+		// the node has a high probability of existing in memory
+		changed = versionSize
+	} else {
+		changed = fullNode.size()
+	}
+	// prune versions
 	if recentVersion != nil {
-		fullNode.Prune(*recentVersion)
+		changed -= fullNode.Prune(*recentVersion)
 	}
 
 	// persist tree
 	rlpBytes, err := rlp.EncodeToBytes(fullNode.ToStorageTreeNode())
 	if err != nil {
-		return err
+		return changed, err
 	}
 	err = db.Set(storageFullTreeNodeKey(fullNode.depth, fullNode.path), rlpBytes)
 	if err != nil {
-		return err
+		return changed, err
 	}
 	if db.ValueSize() > tree.batchSizeLimit {
 		if err := db.Write(); err != nil {
-			return err
+			return changed, err
 		}
 		db.Reset()
 	}
-	return nil
+
+	return changed, nil
 }
 
 func (tree *BASSparseMerkleTree) Commit(recentVersion *Version) (Version, error) {
@@ -401,14 +494,18 @@ func (tree *BASSparseMerkleTree) Commit(recentVersion *Version) (Version, error)
 	if recentVersion != nil && *recentVersion >= newVersion {
 		return tree.version, ErrVersionTooHigh
 	}
+
+	size := uint64(0)
+	journalSize := len(tree.journal)
 	if tree.db != nil {
 		// write tree nodes, prune old version
 		batch := tree.db.NewBatch()
 		for _, node := range tree.journal {
-			err := tree.writeNode(batch, node, newVersion, recentVersion)
+			changed, err := tree.writeNode(batch, node, newVersion, recentVersion)
 			if err != nil {
 				return tree.version, err
 			}
+			size += changed
 		}
 		buf := make([]byte, 8)
 		binary.BigEndian.PutUint64(buf, uint64(newVersion))
@@ -437,45 +534,64 @@ func (tree *BASSparseMerkleTree) Commit(recentVersion *Version) (Version, error)
 	if recentVersion != nil {
 		tree.recentVersion = *recentVersion
 	}
+	originSize := tree.rootSize
+	currentSize := tree.rootSize + size
+	if releaseVersion := tree.gcStatus.pop(currentSize); releaseVersion > 0 {
+		currentSize = tree.root.release(releaseVersion)
+	}
+	tree.gcStatus.add(tree.version, currentSize)
 	tree.journal = make(map[journalKey]*TreeNode)
 	tree.lastSaveRoot = tree.root
+	tree.lastSaveRootSize = originSize
+	tree.rootSize = currentSize
+
+	if tree.metrics != nil {
+		tree.metrics.CommitNum(journalSize)
+		tree.metrics.ChangeSize(size)
+		tree.metrics.CurrentSize(currentSize)
+		tree.metrics.Version(uint64(tree.version))
+		tree.metrics.PrunedVersion(uint64(tree.recentVersion))
+		tree.collectGCMetrics()
+	}
+
 	return newVersion, nil
 }
 
-func (tree *BASSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, db database.Batcher) error {
+func (tree *BASSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, db database.Batcher) (error, uint64) {
 	if child == nil {
-		return nil
+		return nil, 0
 	}
 	// remove value nodes
-	next := child.Rollback(oldVersion)
+	next, changed := child.Rollback(oldVersion)
 	if !next {
-		return nil
+		return nil, changed
 	}
 
 	// persist tree
 	rlpBytes, err := rlp.EncodeToBytes(child.ToStorageTreeNode())
 	if err != nil {
-		return err
+		return err, changed
 	}
 	err = db.Set(storageFullTreeNodeKey(child.depth, child.path), rlpBytes)
 	if err != nil {
-		return err
+		return err, changed
 	}
 	if db.ValueSize() > tree.batchSizeLimit {
 		if err := db.Write(); err != nil {
-			return err
+			return err, changed
 		}
 		db.Reset()
 	}
 
 	for _, subChild := range child.Children {
-		err := tree.rollback(subChild, oldVersion, db)
+		err, subChanged := tree.rollback(subChild, oldVersion, db)
 		if err != nil {
-			return err
+			return err, changed
 		}
+		changed += subChanged
 	}
 
-	return nil
+	return nil, changed
 }
 
 func (tree *BASSparseMerkleTree) Rollback(version Version) error {
@@ -494,13 +610,18 @@ func (tree *BASSparseMerkleTree) Rollback(version Version) error {
 	tree.Reset()
 
 	newVersion := version
+	originSize := tree.rootSize
+	size := tree.rootSize
 	if tree.db != nil {
 		batch := tree.db.NewBatch()
-		tree.rollback(tree.root, version, batch)
-
+		err, changed := tree.rollback(tree.root, version, batch)
+		if err != nil {
+			return err
+		}
+		size -= changed
 		buf := make([]byte, 8)
 		binary.BigEndian.PutUint64(buf, uint64(newVersion))
-		err := batch.Set(latestVersionKey, buf)
+		err = batch.Set(latestVersionKey, buf)
 		if err != nil {
 			return err
 		}
@@ -513,5 +634,25 @@ func (tree *BASSparseMerkleTree) Rollback(version Version) error {
 	}
 
 	tree.version = newVersion
+	tree.rootSize = size
+
+	if tree.metrics != nil {
+		tree.metrics.ChangeSize(originSize - size)
+		tree.metrics.CurrentSize(size)
+		tree.metrics.Version(uint64(tree.version))
+		tree.metrics.PrunedVersion(uint64(tree.recentVersion))
+	}
 	return nil
+}
+
+func (tree *BASSparseMerkleTree) collectGCMetrics() {
+	tree.metrics.LatestGCVersion(uint64(tree.gcStatus.latestGCVersion))
+	var gcVersions [10]*metrics.GCVersion
+	for i := range tree.gcStatus.versions {
+		gcVersions[i] = &metrics.GCVersion{
+			Version: uint64(tree.gcStatus.versions[i]),
+			Size:    uint64(tree.gcStatus.sizes[i]),
+		}
+	}
+	tree.metrics.GCVersions(gcVersions)
 }

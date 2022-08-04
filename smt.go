@@ -213,7 +213,7 @@ func (tree *BASSparseMerkleTree) initFromStorage() error {
 	if err != nil {
 		return err
 	}
-	tree.root = storageTreeNode.ToTreeNode(0, 0, tree.nilHashes, tree.hasher)
+	tree.root = storageTreeNode.ToTreeNode(0, tree.nilHashes, tree.hasher)
 
 	tree.rootSize = tree.root.size()
 	for i := 0; i < len(tree.root.Children); i++ {
@@ -225,7 +225,7 @@ func (tree *BASSparseMerkleTree) initFromStorage() error {
 	return nil
 }
 
-func (tree *BASSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64, depth uint8) error {
+func (tree *BASSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64, depth uint8, isCreated bool) error {
 	if node.Children[nibble] != nil &&
 		!node.Children[nibble].IsTemporary() {
 		return nil
@@ -233,7 +233,9 @@ func (tree *BASSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64,
 
 	rlpBytes, err := tree.db.Get(storageFullTreeNodeKey(depth, path))
 	if errors.Is(err, database.ErrDatabaseNotFound) {
-		node.Children[nibble] = NewTreeNode(depth, path, tree.nilHashes, tree.hasher)
+		if isCreated {
+			node.Children[nibble] = NewTreeNode(depth, path, tree.nilHashes, tree.hasher)
+		}
 		return nil
 	}
 	if err != nil {
@@ -246,7 +248,7 @@ func (tree *BASSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64,
 		return err
 	}
 	node.Children[nibble] = storageTreeNode.ToTreeNode(
-		depth, path, tree.nilHashes, tree.hasher)
+		depth, tree.nilHashes, tree.hasher)
 
 	return nil
 }
@@ -312,7 +314,7 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 		path := key >> (int(tree.maxDepth) - (i+1)*4)
 		nibble := path & 0x000000000000000f
 		parentNodes = append(parentNodes, targetNode)
-		if err := tree.extendNode(targetNode, nibble, path, depth); err != nil {
+		if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {
 			return err
 		}
 		targetNode = targetNode.Children[nibble]
@@ -360,7 +362,7 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64) (Proof, error) {
 	for i := 0; i < int(tree.maxDepth)/4; i++ {
 		path := key >> (int(tree.maxDepth) - (i+1)*4)
 		nibble := path & 0x000000000000000f
-		if err := tree.extendNode(targetNode, nibble, path, depth); err != nil {
+		if err := tree.extendNode(targetNode, nibble, path, depth, false); err != nil {
 			return nil, err
 		}
 		index := 0
@@ -557,41 +559,47 @@ func (tree *BASSparseMerkleTree) Commit(recentVersion *Version) (Version, error)
 	return newVersion, nil
 }
 
-func (tree *BASSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, db database.Batcher) (error, uint64) {
-	if child == nil {
-		return nil, 0
-	}
+func (tree *BASSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, db database.Batcher) (uint64, error) {
 	// remove value nodes
 	next, changed := child.Rollback(oldVersion)
 	if !next {
-		return nil, changed
+		return changed, nil
+	}
+
+	for nibble, subChild := range child.Children {
+		if subChild != nil {
+			subDepth := child.depth + 4
+			err := tree.extendNode(child, uint64(nibble), subChild.path, subDepth, false)
+			if err != nil {
+				return changed, err
+			}
+
+			subChanged, err := tree.rollback(child.Children[nibble], oldVersion, db)
+			if err != nil {
+				return changed, err
+			}
+			changed += subChanged
+		}
+		child.computeInternalHash()
 	}
 
 	// persist tree
 	rlpBytes, err := rlp.EncodeToBytes(child.ToStorageTreeNode())
 	if err != nil {
-		return err, changed
+		return changed, err
 	}
 	err = db.Set(storageFullTreeNodeKey(child.depth, child.path), rlpBytes)
 	if err != nil {
-		return err, changed
+		return changed, err
 	}
 	if db.ValueSize() > tree.batchSizeLimit {
 		if err := db.Write(); err != nil {
-			return err, changed
+			return changed, err
 		}
 		db.Reset()
 	}
 
-	for _, subChild := range child.Children {
-		err, subChanged := tree.rollback(subChild, oldVersion, db)
-		if err != nil {
-			return err, changed
-		}
-		changed += subChanged
-	}
-
-	return nil, changed
+	return changed, nil
 }
 
 func (tree *BASSparseMerkleTree) Rollback(version Version) error {
@@ -614,7 +622,7 @@ func (tree *BASSparseMerkleTree) Rollback(version Version) error {
 	size := tree.rootSize
 	if tree.db != nil {
 		batch := tree.db.NewBatch()
-		err, changed := tree.rollback(tree.root, version, batch)
+		changed, err := tree.rollback(tree.root, version, batch)
 		if err != nil {
 			return err
 		}

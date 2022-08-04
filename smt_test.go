@@ -320,12 +320,119 @@ func testRollback(t *testing.T, hasher *Hasher, db database.TreeDB) {
 	if !errors.Is(err, ErrVersionTooHigh) {
 		t.Fatal(err)
 	}
+
+	if !smt2.VerifyProof(key2, proof2) {
+		t.Fatal("verify proof2 after restoring from db failed")
+	}
 }
 
 func Test_BASSparseMerkleTree_Rollback(t *testing.T) {
 	for _, env := range prepareEnv(t) {
 		t.Logf("test [%s]", env.tag)
 		testRollback(t, env.hasher, env.db)
+		env.db.Close()
+	}
+}
+
+func testRollbackRecovery(t *testing.T, hasher *Hasher, db database.TreeDB) {
+	db1 := memory.NewMemoryDB()
+	db2 := memory.NewMemoryDB()
+	smt, err := NewBASSparseMerkleTree(hasher, db1, 8, nilHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	smt2, err := NewBASSparseMerkleTree(hasher, db2, 8, nilHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	key1 := uint64(0)
+	key2 := uint64(1)
+	val1 := hasher.Hash([]byte("test1"))
+	val2 := hasher.Hash([]byte("test2"))
+	val3 := hasher.Hash([]byte("test3"))
+	val4 := hasher.Hash([]byte("test4"))
+	smt.Set(key1, val1)
+	smt.Set(key2, val2)
+	smt2.Set(key1, val1)
+	smt2.Set(key2, val2)
+	version1, err := smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version1, err = smt2.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = smt.Get(key1, &version1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = smt.Get(key2, &version1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proof2, err := smt.GetProof(key2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !smt.VerifyProof(key2, proof2) {
+		t.Fatal("verify proof2 failed")
+	}
+
+	smt.Set(key1, val3)
+	smt.Set(key2, val4)
+	smt2.Set(key1, val3)
+	smt2.Set(key2, val4)
+	_, err = smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = smt2.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// restore tree from db
+	smt2, err = NewBASSparseMerkleTree(hasher, db2, 8, nilHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = smt2.Rollback(version1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = smt.Rollback(version1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proof2, err = smt2.GetProof(key2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !smt.VerifyProof(key2, proof2) {
+		t.Fatal("[origin] verify proof2 failed")
+	}
+
+	proof2, err = smt.GetProof(key2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !smt2.VerifyProof(key2, proof2) {
+		t.Fatal("[recovery] verify proof2 failed")
+	}
+}
+
+func Test_BASSparseMerkleTree_RollbackAfterRecovery(t *testing.T) {
+	for _, env := range prepareEnv(t) {
+		t.Logf("test [%s]", env.tag)
+		testRollbackRecovery(t, env.hasher, env.db)
 		env.db.Close()
 	}
 }

@@ -178,7 +178,6 @@ func (node *TreeNode) Rollback(targetVersion Version) (bool, uint64) {
 		next = true
 	}
 	node.Versions = node.Versions[:i+1]
-	node.computeInternalHash()
 	return next, uint64(originSize - len(node.Versions)*versionSize)
 }
 
@@ -246,6 +245,7 @@ func (node *TreeNode) ToStorageTreeNode() *StorageTreeNode {
 		Children:  children,
 		Internals: node.Internals,
 		Versions:  node.Versions,
+		Path:      node.path,
 	}
 }
 
@@ -262,15 +262,16 @@ type StorageTreeNode struct {
 	Children  [16]*StorageLeafNode `rlp:"optional"`
 	Internals [14]InternalNode     `rlp:"optional"`
 	Versions  []*VersionInfo       `rlp:"optional"`
+	Path      uint64               `rlp:"optional"`
 }
 
-func (node *StorageTreeNode) ToTreeNode(depth uint8, path uint64, nilHashes *nilHashes, hasher *Hasher) *TreeNode {
+func (node *StorageTreeNode) ToTreeNode(depth uint8, nilHashes *nilHashes, hasher *Hasher) *TreeNode {
 	treeNode := &TreeNode{
 		Internals:    node.Internals,
 		Versions:     node.Versions,
 		nilHash:      nilHashes.Get(depth),
 		nilChildHash: nilHashes.Get(depth + 4),
-		path:         path,
+		path:         node.Path,
 		depth:        depth,
 		hasher:       hasher,
 	}
@@ -280,6 +281,7 @@ func (node *StorageTreeNode) ToTreeNode(depth uint8, path uint64, nilHashes *nil
 				Versions:     node.Children[i].Versions,
 				nilHash:      nilHashes.Get(depth + 4),
 				nilChildHash: nilHashes.Get(depth + 8),
+				hasher:       hasher,
 				temporary:    true,
 			}
 		}

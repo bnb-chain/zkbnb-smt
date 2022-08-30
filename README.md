@@ -11,7 +11,7 @@
   </a>
 </p>
 
-zkbas-smt is an implementation code base based on the concept of `SparseMerkleTree`, which implements the concepts of data persistence and data compression.
+zkbas-smt is an implementation code library based on the concept of `SparseMerkleTree`, which implements the concepts of data persistence and data compression.
 
 For an overview, see the [design](./docs/design.md).
 

@@ -18,10 +18,10 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 
-	"github.com/bnb-chain/bas-smt/database"
-	wrappedLevelDB "github.com/bnb-chain/bas-smt/database/leveldb"
-	"github.com/bnb-chain/bas-smt/database/memory"
-	wrappedRedis "github.com/bnb-chain/bas-smt/database/redis"
+	"github.com/bnb-chain/zkbas-smt/database"
+	wrappedLevelDB "github.com/bnb-chain/zkbas-smt/database/leveldb"
+	"github.com/bnb-chain/zkbas-smt/database/memory"
+	wrappedRedis "github.com/bnb-chain/zkbas-smt/database/redis"
 )
 
 var (

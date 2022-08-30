@@ -8,8 +8,8 @@ package memory
 import (
 	"sync"
 
-	"github.com/bnb-chain/bas-smt/database"
-	"github.com/bnb-chain/bas-smt/utils"
+	"github.com/bnb-chain/zkbas-smt/database"
+	"github.com/bnb-chain/zkbas-smt/utils"
 )
 
 var (

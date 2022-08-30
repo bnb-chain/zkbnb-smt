@@ -11,8 +11,8 @@ import (
 
 	stdErrors "github.com/pkg/errors"
 
-	"github.com/bnb-chain/bas-smt/database"
-	"github.com/bnb-chain/bas-smt/utils"
+	"github.com/bnb-chain/zkbas-smt/database"
+	"github.com/bnb-chain/zkbas-smt/utils"
 	"github.com/go-redis/redis/v8"
 )
 

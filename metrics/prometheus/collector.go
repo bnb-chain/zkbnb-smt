@@ -8,8 +8,9 @@ package prometheus
 import (
 	"fmt"
 
-	"github.com/bnb-chain/zkbnb-smt/metrics"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/bnb-chain/zkbnb-smt/metrics"
 )
 
 var _ metrics.Metrics = (*Collector)(nil)

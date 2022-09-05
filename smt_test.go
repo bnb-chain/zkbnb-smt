@@ -10,11 +10,10 @@ import (
 	"crypto/sha256"
 	"testing"
 
-	"github.com/pkg/errors"
-
 	"github.com/alicebob/miniredis/v2"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-redis/redis/v8"
+	"github.com/pkg/errors"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 

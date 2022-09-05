@@ -8,10 +8,11 @@ package leveldb
 import (
 	"testing"
 
-	"github.com/bnb-chain/zkbnb-smt/database"
-	"github.com/bnb-chain/zkbnb-smt/database/dbtest"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
+
+	"github.com/bnb-chain/zkbnb-smt/database"
+	"github.com/bnb-chain/zkbnb-smt/database/dbtest"
 )
 
 func TestLevelDB(t *testing.T) {

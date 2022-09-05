@@ -5,7 +5,9 @@
 
 package redis
 
-import "github.com/go-redis/redis/v8"
+import (
+	"github.com/go-redis/redis/v8"
+)
 
 // An Option configures a RedisClient
 type Option interface {

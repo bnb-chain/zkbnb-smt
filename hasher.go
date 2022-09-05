@@ -5,7 +5,9 @@
 
 package bsmt
 
-import "hash"
+import (
+	"hash"
+)
 
 func NewHasher(hasher hash.Hash) *Hasher {
 	return &Hasher{

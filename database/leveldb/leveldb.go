@@ -10,7 +10,7 @@ import (
 
 	stdErrors "github.com/pkg/errors"
 
-	"github.com/bnb-chain/zkbas-smt/database"
+	"github.com/bnb-chain/zkbnb-smt/database"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/errors"
 	"github.com/syndtr/goleveldb/leveldb/filter"

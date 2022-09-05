@@ -8,7 +8,7 @@ package prometheus
 import (
 	"fmt"
 
-	"github.com/bnb-chain/zkbas-smt/metrics"
+	"github.com/bnb-chain/zkbnb-smt/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

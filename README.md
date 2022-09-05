@@ -1,24 +1,24 @@
-## zkbas-smt
+## zkbnb-smt
 
 <p>
-  <img src="https://img.shields.io/github/workflow/status/bnb-chain/zkbas-smt/Checker?style=flat-square">
-  <a href="https://github.com/bnb-chain/zkbas-smt/blob/master/LICENSE">
+  <img src="https://img.shields.io/github/workflow/status/bnb-chain/zkbnb-smt/Checker?style=flat-square">
+  <a href="https://github.com/bnb-chain/zkbnb-smt/blob/master/LICENSE">
     <img src="https://img.shields.io/github/license/globocom/go-buffer?color=blue&style=flat-square">
   </a>
-  <img src="https://img.shields.io/github/go-mod/go-version/bnb-chain/zkbas-smt?style=flat-square">
-  <a href="https://pkg.go.dev/github.com/bnb-chain/zkbas-smt">
+  <img src="https://img.shields.io/github/go-mod/go-version/bnb-chain/zkbnb-smt?style=flat-square">
+  <a href="https://pkg.go.dev/github.com/bnb-chain/zkbnb-smt">
     <img src="https://img.shields.io/badge/Go-reference-blue?style=flat-square">
   </a>
 </p>
 
-zkbas-smt is an implementation code library based on the concept of `SparseMerkleTree`, which implements the concepts of data persistence and data compression.
+zkbnb-smt is an implementation code library based on the concept of `SparseMerkleTree`, which implements the concepts of data persistence and data compression.
 
 For an overview, see the [design](./docs/design.md).
 
 
 ## Installation
 ```shell
-go get github.com/bnb-chain/zkbas-smt@latest
+go get github.com/bnb-chain/zkbnb-smt@latest
 ```
 
 ## Quickstart
@@ -30,8 +30,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	bsmt "github.com/bnb-chain/zkbas-smt"
-	"github.com/bnb-chain/zkbas-smt/database/memory"
+	bsmt "github.com/bnb-chain/zkbnb-smt"
+	"github.com/bnb-chain/zkbnb-smt/database/memory"
 )
 
 func main() {

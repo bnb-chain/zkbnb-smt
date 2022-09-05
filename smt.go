@@ -13,10 +13,10 @@ import (
 	sysMemory "github.com/pbnjay/memory"
 	"github.com/pkg/errors"
 
-	"github.com/bnb-chain/zkbas-smt/database"
-	"github.com/bnb-chain/zkbas-smt/database/memory"
-	"github.com/bnb-chain/zkbas-smt/metrics"
-	"github.com/bnb-chain/zkbas-smt/utils"
+	"github.com/bnb-chain/zkbnb-smt/database"
+	"github.com/bnb-chain/zkbnb-smt/database/memory"
+	"github.com/bnb-chain/zkbnb-smt/metrics"
+	"github.com/bnb-chain/zkbnb-smt/utils"
 )
 
 var (

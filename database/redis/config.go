@@ -5,7 +5,9 @@
 
 package redis
 
-import "time"
+import (
+	"time"
+)
 
 type RedisConfig struct {
 	ClusterAddr []string

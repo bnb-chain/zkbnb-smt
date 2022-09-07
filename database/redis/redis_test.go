@@ -9,9 +9,10 @@ import (
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/bnb-chain/zkbas-smt/database"
-	"github.com/bnb-chain/zkbas-smt/database/dbtest"
 	"github.com/go-redis/redis/v8"
+
+	"github.com/bnb-chain/zkbnb-smt/database"
+	"github.com/bnb-chain/zkbnb-smt/database/dbtest"
 )
 
 func TestRedis(t *testing.T) {

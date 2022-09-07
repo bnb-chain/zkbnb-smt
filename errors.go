@@ -5,7 +5,9 @@
 
 package bsmt
 
-import "github.com/pkg/errors"
+import (
+	"github.com/pkg/errors"
+)
 
 var (
 	ErrEmptyRoot = errors.New("empty root")

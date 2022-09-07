@@ -9,11 +9,11 @@ import (
 	"bytes"
 	"context"
 
+	"github.com/go-redis/redis/v8"
 	stdErrors "github.com/pkg/errors"
 
-	"github.com/bnb-chain/zkbas-smt/database"
-	"github.com/bnb-chain/zkbas-smt/utils"
-	"github.com/go-redis/redis/v8"
+	"github.com/bnb-chain/zkbnb-smt/database"
+	"github.com/bnb-chain/zkbnb-smt/utils"
 )
 
 var (

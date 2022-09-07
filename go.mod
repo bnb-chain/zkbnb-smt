@@ -1,4 +1,4 @@
-module github.com/bnb-chain/zkbas-smt
+module github.com/bnb-chain/zkbnb-smt
 
 go 1.17
 

@@ -1,5 +1,5 @@
 ### Description
-zkBAS is an L2 solution based on zk-rollup, which is used to solve the problems of low transaction performance and high transaction fees on the chain. There is a concept of a world state in zkBAS. All account data is organized in the form of a tree. The root hash value of the tree can identify a unique world state. At the same time, through the Merkle branch verification technology, it can be verified whether an account data belongs to the world state. This is also an important part of proving transaction validity in zk-rollup. This design document mainly focuses on the design of the world state tree in zkBAS, including basic structure design, cache design, and persistence design.
+ZkBNB is an L2 solution based on zk-rollup, which is used to solve the problems of low transaction performance and high transaction fees on the chain. There is a concept of a world state in ZkBNB. All account data is organized in the form of a tree. The root hash value of the tree can identify a unique world state. At the same time, through the Merkle branch verification technology, it can be verified whether an account data belongs to the world state. This is also an important part of proving transaction validity in zk-rollup. This design document mainly focuses on the design of the world state tree in ZkBNB, including basic structure design, cache design, and persistence design.
 
 ### Design
 #### SMT
@@ -26,7 +26,7 @@ In general, the original SMT structure has the following optimizations:
 3. For subtrees without leaf nodes, the subtree uses precomputed empty nodes instead
 
 ![overview](./assets/overview.png)
-The above optimization points can reduce the calculation of hash times and reduce the occupation of node space. In the zkBAS scenario, the required Merkle Proof size is fixed, so if the above optimization points are adopted, the hash calculation also needs to follow The native SMT tree method is used to calculate; for reducing the node space, the tree depth is large and the leaf node insertion is random. However, in zkBAS, the insertion of the leaf node, that is, the account data, is dense and increasing, and the tree depth is at the same time. is 32, the space-saving advantage brought by optimization points 1 and 2 is not obvious, and also requires additional hash calculation. Therefore, zkBAS Tree only adopts optimization point 3 to reduce the space overhead caused by empty subtrees.
+The above optimization points can reduce the calculation of hash times and reduce the occupation of node space. In the ZkBNB scenario, the required Merkle Proof size is fixed, so if the above optimization points are adopted, the hash calculation also needs to follow The native SMT tree method is used to calculate; for reducing the node space, the tree depth is large and the leaf node insertion is random. However, in ZkBNB, the insertion of the leaf node, that is, the account data, is dense and increasing, and the tree depth is at the same time. is 32, the space-saving advantage brought by optimization points 1 and 2 is not obvious, and also requires additional hash calculation. Therefore, ZkBNB Tree only adopts optimization point 3 to reduce the space overhead caused by empty subtrees.
 
 ![node](./assets/tree-node.png)
 In addition, we make full use of the certainty and order of keys to simplify the implementation of real-time prune.
@@ -46,7 +46,7 @@ BAS SMT has the following features:
 #### Pros
 1. `Hidden node relationships.` TreeNode does not point to the left and right child nodes through storage, and the relationship between nodes is hidden in the nibble path of TreeNode.
 2. `O(1) access speed.` Profit and hidden node relationship, when we want to query the latest value of a node, we only need to visit the database once.
-3. `Hot and cold cache.` Since SMT in zkBAS is mainly used for updating, not querying, and revert does not occur in most cases, we can decide whether to keep it in memory according to the age of the latest version in Tree Node, In this way, the hot and cold cache is realized.
+3. `Hot and cold cache.` Since SMT in ZkBNB is mainly used for updating, not querying, and revert does not occur in most cases, we can decide whether to keep it in memory according to the age of the latest version in Tree Node, In this way, the hot and cold cache is realized.
 4. `Prune.` Suppose we need to save the data of the most recent N blocks, just insert the new version to the right when writing, and remove the old version
 
 #### Cons

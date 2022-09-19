@@ -16,6 +16,7 @@ type (
 		GetProof(key uint64) (Proof, error)
 		VerifyProof(key uint64, proof Proof) bool
 		LatestVersion() Version
+		RecentVersion() Version
 		Reset()
 		Commit(recentVersion *Version) (Version, error)
 		Rollback(version Version) error

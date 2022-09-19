@@ -457,6 +457,10 @@ func (tree *BASSparseMerkleTree) LatestVersion() Version {
 	return tree.version
 }
 
+func (tree *BASSparseMerkleTree) RecentVersion() Version {
+	return tree.recentVersion
+}
+
 func (tree *BASSparseMerkleTree) Reset() {
 	tree.journal = make(map[journalKey]*TreeNode)
 	tree.root = tree.lastSaveRoot

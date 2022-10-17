@@ -24,6 +24,12 @@ func BatchSizeLimit(limit int) Option {
 	}
 }
 
+func DBCacheSize(size int) Option {
+	return func(smt *BASSparseMerkleTree) {
+		smt.dbCacheSize = size
+	}
+}
+
 func GCThreshold(threshold uint64) Option {
 	return func(smt *BASSparseMerkleTree) {
 		if smt.gcStatus != nil {

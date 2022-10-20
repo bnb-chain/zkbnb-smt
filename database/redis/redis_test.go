@@ -25,9 +25,7 @@ func TestRedis(t *testing.T) {
 			client := redis.NewClient(&redis.Options{
 				Addr: mr.Addr(),
 			})
-			return &Database{
-				db: client,
-			}
+			return NewFromExistRedisClient(client)
 		})
 	})
 }

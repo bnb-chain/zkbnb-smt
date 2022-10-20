@@ -108,7 +108,7 @@ type batch struct {
 // Put inserts the given value into the batch for later committing.
 func (b *batch) Set(key, value []byte) error {
 	b.writes = append(b.writes, keyvalue{utils.CopyBytes(key), utils.CopyBytes(value), false})
-	b.size += len(value)
+	b.size += len(key) + len(value)
 	return nil
 }
 
@@ -124,6 +124,10 @@ func (b *batch) Write() error {
 	b.db.lock.Lock()
 	defer b.db.lock.Unlock()
 
+	if len(b.writes) == 0 {
+		return nil
+	}
+
 	for _, keyvalue := range b.writes {
 		if keyvalue.delete {
 			delete(b.db.db, string(keyvalue.key))
@@ -131,6 +135,7 @@ func (b *batch) Write() error {
 		}
 		b.db.db[string(keyvalue.key)] = keyvalue.value
 	}
+	b.size = 0
 	return nil
 }
 

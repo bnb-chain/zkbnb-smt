@@ -45,6 +45,7 @@ func prepareEnv(t *testing.T) []testEnv {
 	client := redis.NewClient(&redis.Options{
 		Addr: mr.Addr(),
 	})
+	pipe := client.Pipeline()
 	return []testEnv{
 		{
 			tag:    "memoryDB",
@@ -59,7 +60,7 @@ func prepareEnv(t *testing.T) []testEnv {
 		{
 			tag:    "redis",
 			hasher: &Hasher{sha256.New()},
-			db:     wrappedRedis.WrapWithNamespace(wrappedRedis.NewFromExistRedisClient(client), "test"),
+			db:     wrappedRedis.WrapWithNamespace(wrappedRedis.NewFromExistRedisClient(client, wrappedRedis.WithSharedPipeliner(pipe)), "test"),
 		},
 	}
 }

@@ -22,9 +22,7 @@ func TestLevelDB(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			return &Database{
-				db: db,
-			}
+			return NewFromExistLevelDB(db)
 		})
 	})
 }

@@ -8,6 +8,7 @@ package redis
 import (
 	"bytes"
 	"context"
+	"sync"
 
 	"github.com/go-redis/redis/v8"
 	stdErrors "github.com/pkg/errors"
@@ -75,35 +76,42 @@ func New(config *RedisConfig, opts ...Option) (*Database, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	for _, opt := range opts {
-		opt.Apply(client)
+	db := &Database{
+		db: client,
 	}
 
-	return &Database{
-		db: client,
-	}, nil
+	for _, opt := range opts {
+		opt.Apply(db)
+	}
+
+	return db, nil
 }
 
 // NewFromExistRedisClient returns a wrapped Redis object.
-func NewFromExistRedisClient(db RedisClient) *Database {
-	return &Database{
-		db: db,
+func NewFromExistRedisClient(client RedisClient, opts ...Option) *Database {
+	db := &Database{
+		db: client,
 	}
+	for _, opt := range opts {
+		opt.Apply(db)
+	}
+	return db
 }
 
 // WrapWithNamespace returns a wrapped Redis object.
 // The namespace is the prefix that the datastore.
 func WrapWithNamespace(db *Database, namespace string) *Database {
 	return &Database{
-		namespace: []byte(namespace),
-		db:        db.db,
+		namespace:  []byte(namespace),
+		db:         db.db,
+		sharedPipe: db.sharedPipe,
 	}
 }
 
 type Database struct {
-	namespace []byte
-	db        RedisClient // redis client
+	namespace  []byte
+	db         RedisClient // redis client
+	sharedPipe redis.Pipeliner
 }
 
 // wrapKey returns a wrapper key with namespace.
@@ -151,10 +159,14 @@ func (db *Database) Delete(key []byte) error {
 // NewBatch creates a write-only key-value store that buffers changes to its host
 // database until a final write is called.
 func (db *Database) NewBatch() database.Batcher {
+	pipe := db.sharedPipe
+	if pipe == nil {
+		pipe = db.db.Pipeline()
+	}
 	return &batch{
 		db:        db.db,
 		namespace: db.namespace,
-		b:         db.db.Pipeline(),
+		b:         pipe,
 	}
 }
 
@@ -165,17 +177,22 @@ type batch struct {
 	db        RedisClient
 	b         redis.Pipeliner
 	size      int
+	lock      sync.RWMutex
 }
 
 // Put inserts the given value into the batch for later committing.
 func (b *batch) Set(key, value []byte) error {
-	b.b.Set(context.Background(), wrapKey(b.namespace, key), value, 0)
-	b.size += len(value)
+	b.lock.Lock()
+	defer b.lock.Unlock()
+	b.b.Set(context.Background(), wrapKey(b.namespace, key), value, 0).Err()
+	b.size += len(key) + len(value)
 	return nil
 }
 
 // Delete inserts the a key removal into the batch for later committing.
 func (b *batch) Delete(key []byte) error {
+	b.lock.Lock()
+	defer b.lock.Unlock()
 	b.b.Del(context.Background(), wrapKey(b.namespace, key))
 	b.size += len(key)
 	return nil
@@ -183,20 +200,30 @@ func (b *batch) Delete(key []byte) error {
 
 // Write flushes any accumulated data to disk.
 func (b *batch) Write() error {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+	if b.size == 0 {
+		return nil
+	}
 	_, err := b.b.Exec(context.Background())
 	if err != nil {
 		return err
 	}
+	b.size = 0
 	return nil
 }
 
 // ValueSize retrieves the amount of data queued up for writing.
 func (b *batch) ValueSize() int {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
 	return b.size
 }
 
 // Reset resets the batch for reuse.
 func (b *batch) Reset() {
-	b.b = b.db.Pipeline()
+	b.lock.Lock()
+	defer b.lock.Unlock()
+	b.b.Discard()
 	b.size = 0
 }

@@ -175,7 +175,7 @@ type batch struct {
 // Put inserts the given value into the batch for later committing.
 func (b *batch) Set(key, value []byte) error {
 	b.b.Put(wrapKey(b.namespace, key), value)
-	b.size += len(value)
+	b.size += len(key) + len(value)
 	return nil
 }
 
@@ -188,7 +188,15 @@ func (b *batch) Delete(key []byte) error {
 
 // Write flushes any accumulated data to disk.
 func (b *batch) Write() error {
-	return b.db.Write(b.b, nil)
+	if b.size == 0 {
+		return nil
+	}
+	err := b.db.Write(b.b, nil)
+	if err != nil {
+		return err
+	}
+	b.size = 0
+	return nil
 }
 
 // ValueSize retrieves the amount of data queued up for writing.

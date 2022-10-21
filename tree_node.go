@@ -5,6 +5,8 @@
 
 package bsmt
 
+import "sync"
+
 const (
 	hashSize    = 32
 	versionSize = 40
@@ -34,6 +36,7 @@ func NewTreeNode(depth uint8, path uint64, nilHashes *nilHashes, hasher *Hasher)
 type InternalNode []byte
 
 type TreeNode struct {
+	mu        sync.RWMutex
 	Children  [16]*TreeNode
 	Internals [14]InternalNode
 	Versions  []*VersionInfo
@@ -47,20 +50,23 @@ type TreeNode struct {
 }
 
 func (node *TreeNode) Root() []byte {
+	node.mu.RLock()
+	defer node.mu.RUnlock()
+
 	if len(node.Versions) == 0 {
 		return node.nilHash
 	}
 	return node.Versions[len(node.Versions)-1].Hash
 }
 
-func (node *TreeNode) set(hash []byte, version Version) *TreeNode {
-	copied := node.Copy()
-	copied.newVersion(&VersionInfo{
+func (node *TreeNode) Set(hash []byte, version Version) {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	node.newVersion(&VersionInfo{
 		Ver:  version,
 		Hash: hash,
 	})
-
-	return copied
 }
 
 func (node *TreeNode) newVersion(version *VersionInfo) {
@@ -72,51 +78,55 @@ func (node *TreeNode) newVersion(version *VersionInfo) {
 	node.Versions = append(node.Versions, version)
 }
 
-func (node *TreeNode) setChildren(child *TreeNode, nibble int, version Version) *TreeNode {
-	copied := node.Copy()
-	copied.Children[nibble] = child
+func (node *TreeNode) SetChildren(child *TreeNode, nibble int, version Version) {
+	node.mu.Lock()
+	defer node.mu.Unlock()
 
-	left, right := copied.nilChildHash, copied.nilChildHash
+	node.Children[nibble] = child
+
+	left, right := node.nilChildHash, node.nilChildHash
 	switch nibble % 2 {
 	case 0:
-		if copied.Children[nibble] != nil {
-			left = copied.Children[nibble].Root()
+		if node.Children[nibble] != nil {
+			left = node.Children[nibble].Root()
 		}
-		if copied.Children[nibble^1] != nil {
-			right = copied.Children[nibble^1].Root()
+		if node.Children[nibble^1] != nil {
+			right = node.Children[nibble^1].Root()
 		}
 	case 1:
-		if copied.Children[nibble] != nil {
-			right = copied.Children[nibble].Root()
+		if node.Children[nibble] != nil {
+			right = node.Children[nibble].Root()
 		}
-		if copied.Children[nibble^1] != nil {
-			left = copied.Children[nibble^1].Root()
+		if node.Children[nibble^1] != nil {
+			left = node.Children[nibble^1].Root()
 		}
 	}
 	prefix := 6
 	for i := 4; i >= 1; i >>= 1 {
 		nibble = nibble / 2
-		copied.Internals[prefix+nibble] = copied.hasher.Hash(left, right)
+		node.Internals[prefix+nibble] = node.hasher.Hash(left, right)
 		switch nibble % 2 {
 		case 0:
-			left = copied.Internals[prefix+nibble]
-			right = copied.Internals[prefix+nibble^1]
+			left = node.Internals[prefix+nibble]
+			right = node.Internals[prefix+nibble^1]
 		case 1:
-			right = copied.Internals[prefix+nibble]
-			left = copied.Internals[prefix+nibble^1]
+			right = node.Internals[prefix+nibble]
+			left = node.Internals[prefix+nibble^1]
 		}
 		prefix = prefix - i
 	}
 	// update current root node
-	copied.newVersion(&VersionInfo{
+	node.newVersion(&VersionInfo{
 		Ver:  version,
-		Hash: copied.hasher.Hash(copied.Internals[0], copied.Internals[1]),
+		Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
 	})
-	return copied
 }
 
 // Recompute all internal hashes
-func (node *TreeNode) computeInternalHash() {
+func (node *TreeNode) ComputeInternalHash() {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
 	// leaf node
 	for i := 0; i < 15; i += 2 {
 		left, right := node.nilChildHash, node.nilChildHash
@@ -135,6 +145,9 @@ func (node *TreeNode) computeInternalHash() {
 }
 
 func (node *TreeNode) Copy() *TreeNode {
+	node.mu.RLock()
+	defer node.mu.RUnlock()
+
 	return &TreeNode{
 		Children:     node.Children,
 		Internals:    node.Internals,
@@ -149,6 +162,9 @@ func (node *TreeNode) Copy() *TreeNode {
 }
 
 func (node *TreeNode) Prune(oldestVersion Version) uint64 {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
 	if len(node.Versions) <= 1 {
 		return 0
 	}
@@ -170,6 +186,9 @@ func (node *TreeNode) Prune(oldestVersion Version) uint64 {
 }
 
 func (node *TreeNode) Rollback(targetVersion Version) (bool, uint64) {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
 	if len(node.Versions) == 0 {
 		return false, 0
 	}
@@ -198,8 +217,11 @@ func (node *TreeNode) archive() {
 	node.temporary = true
 }
 
-// previousVersion returns the previous version number in the current TreeNode
-func (node *TreeNode) previousVersion() Version {
+// PreviousVersion returns the previous version number in the current TreeNode
+func (node *TreeNode) PreviousVersion() Version {
+	node.mu.RLock()
+	defer node.mu.RUnlock()
+
 	if len(node.Versions) <= 1 {
 		return 0
 	}
@@ -207,7 +229,7 @@ func (node *TreeNode) previousVersion() Version {
 }
 
 // size returns the current node size
-func (node *TreeNode) size() uint64 {
+func (node *TreeNode) Size() uint64 {
 	if node.temporary {
 		return uint64(len(node.Versions) * versionSize)
 	}
@@ -216,17 +238,20 @@ func (node *TreeNode) size() uint64 {
 
 // Release nodes that have not been updated for a long time from memory.
 // slowing down memory usage in runtime.
-func (node *TreeNode) release(oldestVersion Version) uint64 {
-	size := node.size()
+func (node *TreeNode) Release(oldestVersion Version) uint64 {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	size := node.Size()
 	for i := 0; i < len(node.Children); i++ {
 		if node.Children[i] != nil {
 			length := len(node.Children[i].Versions)
 			if length > 0 && node.Children[i].Versions[length-1].Ver < oldestVersion {
 				// check for the latest version and release it if it is older than the pruned version
 				node.Children[i].archive()
-				size += node.Children[i].size()
+				size += node.Children[i].Size()
 			} else {
-				size += node.Children[i].release(oldestVersion)
+				size += node.Children[i].Release(oldestVersion)
 			}
 		}
 	}
@@ -240,6 +265,9 @@ func (node *TreeNode) IsTemporary() bool {
 }
 
 func (node *TreeNode) ToStorageTreeNode() *StorageTreeNode {
+	node.mu.RLock()
+	defer node.mu.RUnlock()
+
 	var children [16]*StorageLeafNode
 	for i := 0; i < 16; i++ {
 		if node.Children[i] != nil {

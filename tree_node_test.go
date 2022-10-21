@@ -8,11 +8,14 @@ package bsmt
 import (
 	"bytes"
 	"crypto/sha256"
+	"hash"
 	"testing"
 )
 
 func TestTreeNode_Copy(t *testing.T) {
-	hasher := &Hasher{sha256.New()}
+	hasher := NewHasherPool(func() hash.Hash {
+		return sha256.New()
+	})
 	nilHashes := &nilHashes{[][]byte{
 		[]byte("test0"),
 		[]byte("test1"),
@@ -23,10 +26,10 @@ func TestTreeNode_Copy(t *testing.T) {
 	node := NewTreeNode(0, 0, nilHashes, hasher)
 	copied := node.Copy()
 	for i := 0; i < len(copied.Children); i++ {
-		copied = copied.setChildren(NewTreeNode(4, uint64(i), nilHashes, hasher), i, 0)
+		copied.SetChildren(NewTreeNode(4, uint64(i), nilHashes, hasher), i, 0)
 	}
-	copied.computeInternalHash()
-	copied = copied.set(hasher.Hash(copied.Internals[0], copied.Internals[1]), 0)
+	copied.ComputeInternalHash()
+	copied.Set(hasher.Hash(copied.Internals[0], copied.Internals[1]), 0)
 
 	if bytes.Equal(node.Root(), copied.Root()) {
 		t.Fatal("root should not be equal")

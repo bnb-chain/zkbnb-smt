@@ -7,22 +7,29 @@ package bsmt
 
 import (
 	"hash"
+	"sync"
 )
 
-func NewHasher(hasher hash.Hash) *Hasher {
+func NewHasherPool(init func() hash.Hash) *Hasher {
 	return &Hasher{
-		hasher: hasher,
+		pool: sync.Pool{
+			New: func() interface{} {
+				return init()
+			},
+		},
 	}
 }
 
 type Hasher struct {
-	hasher hash.Hash
+	pool sync.Pool
 }
 
 func (h *Hasher) Hash(inputs ...[]byte) []byte {
-	h.hasher.Reset()
+	hasher := h.pool.Get().(hash.Hash)
+	defer h.pool.Put(hasher)
+	hasher.Reset()
 	for i := range inputs {
-		h.hasher.Write(inputs[i])
+		hasher.Write(inputs[i])
 	}
-	return h.hasher.Sum(nil)
+	return hasher.Sum(nil)
 }

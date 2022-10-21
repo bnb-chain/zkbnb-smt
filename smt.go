@@ -424,6 +424,9 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 }
 
 func (tree *BASSparseMerkleTree) MultiSet(items ...Item) error {
+	if len(items) == 0 {
+		return nil
+	}
 	newVersion := tree.version + 1
 	targetNode := tree.root
 	tmpJournal := newJournal()

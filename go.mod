@@ -22,6 +22,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.5-0.20221011183528-d4900dc688bf // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/onsi/gomega v1.19.0 // indirect
+	github.com/panjf2000/ants/v2 v2.5.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.32.1 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect

@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/rlp"
 	lru "github.com/hashicorp/golang-lru"
+	"github.com/panjf2000/ants/v2"
 	sysMemory "github.com/pbnjay/memory"
 	"github.com/pkg/errors"
 
@@ -80,6 +81,13 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 	smt.dbCache, err = lru.New(smt.dbCacheSize)
 	if err != nil {
 		return nil, err
+	}
+
+	if smt.goroutinePool == nil {
+		smt.goroutinePool, err = ants.NewPool(1024)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return smt, nil
@@ -239,8 +247,8 @@ type BASSparseMerkleTree struct {
 	dbCache          *lru.Cache
 	batchSizeLimit   int
 	gcStatus         *gcStatus
-
-	metrics metrics.Metrics
+	goroutinePool    *ants.Pool
+	metrics          metrics.Metrics
 }
 
 func (tree *BASSparseMerkleTree) initFromStorage() error {
@@ -452,20 +460,22 @@ func (tree *BASSparseMerkleTree) MultiSet(items ...Item) error {
 
 		// recompute root hash of middle nodes in parallel
 		wg.Add(1)
-		go func(child *TreeNode) {
-			defer wg.Done()
-			for child != nil {
-				parentKey := journalKey{depth: child.depth - 4, path: child.path >> 4}
-				parent, exist := tmpJournal.get(parentKey)
-				if !exist {
-					// skip if the parent is not exist
-					return
-				}
+		func(child *TreeNode) {
+			tree.goroutinePool.Submit(func() {
+				defer wg.Done()
+				for child != nil {
+					parentKey := journalKey{depth: child.depth - 4, path: child.path >> 4}
+					parent, exist := tmpJournal.get(parentKey)
+					if !exist {
+						// skip if the parent is not exist
+						return
+					}
 
-				// update child to parent node
-				parent.SetChildren(child, int(child.path&0x000000000000000f), newVersion)
-				child = parent
-			}
+					// update child to parent node
+					parent.SetChildren(child, int(child.path&0x000000000000000f), newVersion)
+					child = parent
+				}
+			})
 		}(targetNode)
 	}
 	wg.Wait()

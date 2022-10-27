@@ -8,6 +8,7 @@ package bsmt
 import (
 	"bytes"
 	"crypto/sha256"
+	"hash"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
@@ -30,41 +31,57 @@ var (
 type testEnv struct {
 	tag    string
 	hasher *Hasher
-	db     database.TreeDB
+	db     func() (database.TreeDB, error)
 }
 
 func prepareEnv(t *testing.T) []testEnv {
-	db, err := leveldb.Open(storage.NewMemStorage(), nil)
-	if err != nil {
-		t.Fatal(err)
+	initLevelDB := func() (database.TreeDB, error) {
+		db, err := leveldb.Open(storage.NewMemStorage(), nil)
+		if err != nil {
+			return nil, err
+		}
+		return wrappedLevelDB.WrapWithNamespace(wrappedLevelDB.NewFromExistLevelDB(db), "test"), nil
 	}
-	mr, err := miniredis.Run()
-	if err != nil {
-		t.Fatal(err)
+	initRedisDB := func() (database.TreeDB, error) {
+		mr, err := miniredis.Run()
+		if err != nil {
+			return nil, err
+		}
+		client := redis.NewClient(&redis.Options{
+			Addr: mr.Addr(),
+		})
+		return wrappedRedis.WrapWithNamespace(wrappedRedis.NewFromExistRedisClient(client), "test"), nil
 	}
-	client := redis.NewClient(&redis.Options{
-		Addr: mr.Addr(),
-	})
+	initMemoryDB := func() (database.TreeDB, error) {
+		return memory.NewMemoryDB(), nil
+	}
+
 	return []testEnv{
 		{
 			tag:    "memoryDB",
-			hasher: &Hasher{sha256.New()},
-			db:     memory.NewMemoryDB(),
+			hasher: NewHasherPool(func() hash.Hash { return sha256.New() }),
+			db:     initMemoryDB,
 		},
 		{
 			tag:    "levelDB",
-			hasher: &Hasher{sha256.New()},
-			db:     wrappedLevelDB.WrapWithNamespace(wrappedLevelDB.NewFromExistLevelDB(db), "test"),
+			hasher: NewHasherPool(func() hash.Hash { return sha256.New() }),
+			db:     initLevelDB,
 		},
 		{
 			tag:    "redis",
-			hasher: &Hasher{sha256.New()},
-			db:     wrappedRedis.WrapWithNamespace(wrappedRedis.NewFromExistRedisClient(client), "test"),
+			hasher: NewHasherPool(func() hash.Hash { return sha256.New() }),
+			db:     initRedisDB,
 		},
 	}
 }
 
-func testProof(t *testing.T, hasher *Hasher, db database.TreeDB) {
+func testProof(t *testing.T, hasher *Hasher, dbInitializer func() (database.TreeDB, error)) {
+	db, err := dbInitializer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
 	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
@@ -256,11 +273,134 @@ func Test_BASSparseMerkleTree_Proof(t *testing.T) {
 	for _, env := range prepareEnv(t) {
 		t.Logf("test [%s]", env.tag)
 		testProof(t, env.hasher, env.db)
-		env.db.Close()
 	}
 }
 
-func testRollback(t *testing.T, hasher *Hasher, db database.TreeDB) {
+func testMultiSet(t *testing.T, hasher *Hasher, dbInitializer func() (database.TreeDB, error)) {
+	db, err := dbInitializer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash,
+		GCThreshold(1024*10))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db2, err := dbInitializer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+	smt2, err := NewBASSparseMerkleTree(hasher, db2, 8, nilHash,
+		GCThreshold(1024*10))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testKVData := []Item{
+		{1, hasher.Hash([]byte("val1"))},
+		{2, hasher.Hash([]byte("val2"))},
+		{3, hasher.Hash([]byte("val3"))},
+		{4, hasher.Hash([]byte("val4"))},
+		{5, hasher.Hash([]byte("val5"))},
+		{6, hasher.Hash([]byte("val6"))},
+		{7, hasher.Hash([]byte("val7"))},
+		{8, hasher.Hash([]byte("val8"))},
+		{9, hasher.Hash([]byte("val9"))},
+		{10, hasher.Hash([]byte("val10"))},
+		{11, hasher.Hash([]byte("val11"))},
+		{12, hasher.Hash([]byte("val12"))},
+		{13, hasher.Hash([]byte("val13"))},
+		{14, hasher.Hash([]byte("val14"))},
+		{200, hasher.Hash([]byte("val200"))},
+		{20, hasher.Hash([]byte("val20"))},
+		{21, hasher.Hash([]byte("val21"))},
+		{22, hasher.Hash([]byte("val22"))},
+		{23, hasher.Hash([]byte("val23"))},
+		{24, hasher.Hash([]byte("val24"))},
+		{26, hasher.Hash([]byte("val26"))},
+		{37, hasher.Hash([]byte("val37"))},
+		{255, hasher.Hash([]byte("val255"))},
+		{254, hasher.Hash([]byte("val254"))},
+		{253, hasher.Hash([]byte("val253"))},
+		{252, hasher.Hash([]byte("val252"))},
+		{251, hasher.Hash([]byte("val251"))},
+		{250, hasher.Hash([]byte("val250"))},
+		{249, hasher.Hash([]byte("val249"))},
+		{248, hasher.Hash([]byte("val248"))},
+		{247, hasher.Hash([]byte("val247"))},
+		{15, hasher.Hash([]byte("val15"))},
+	}
+
+	t.Log("set data")
+	err = smt.MultiSet(testKVData)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, item := range testKVData {
+		err := smt2.Set(item.Key, item.Val)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err = smt2.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(smt.Root(), smt2.Root()) {
+		t.Fatalf("root hash does not match, %x, %x\n", smt.Root(), smt2.Root())
+	}
+
+	for _, item := range testKVData {
+		val, err := smt.Get(item.Key, nil)
+		if err != nil {
+			t.Fatal("get key from tree1 failed", item.Key, err)
+		}
+		val2, err := smt2.Get(item.Key, nil)
+		if err != nil {
+			t.Fatal("get key from tree2 failed", item.Key, err)
+		}
+		if !bytes.Equal(val, val2) {
+			t.Fatalf("leaf node does not match, %x, %x\n", val, val2)
+		}
+		if !bytes.Equal(val, item.Val) {
+			t.Fatalf("leaf node does not match the origin, %x, %x\n", val, item.Val)
+		}
+
+		proof, err := smt.GetProof(item.Key)
+		if err != nil {
+			t.Fatal("get proof from tree1 failed", item.Key, err)
+		}
+
+		if !smt2.VerifyProof(item.Key, proof) {
+			t.Fatal("verify proof from tree2 failed")
+		}
+	}
+}
+
+func Test_BASSparseMerkleTree_MultiSet(t *testing.T) {
+	for _, env := range prepareEnv(t) {
+		t.Logf("test [%s]", env.tag)
+		testMultiSet(t, env.hasher, env.db)
+	}
+}
+
+func testRollback(t *testing.T, hasher *Hasher, dbInitializer func() (database.TreeDB, error)) {
+	db, err := dbInitializer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
 	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
@@ -342,14 +482,22 @@ func Test_BASSparseMerkleTree_Rollback(t *testing.T) {
 	for _, env := range prepareEnv(t) {
 		t.Logf("test [%s]", env.tag)
 		testRollback(t, env.hasher, env.db)
-		env.db.Close()
 	}
 }
 
-func testRollbackRecovery(t *testing.T, hasher *Hasher, db database.TreeDB) {
-	db1 := memory.NewMemoryDB()
-	db2 := memory.NewMemoryDB()
-	smt, err := NewBASSparseMerkleTree(hasher, db1, 8, nilHash)
+func testRollbackRecovery(t *testing.T, hasher *Hasher, dbInitializer func() (database.TreeDB, error)) {
+	db, err := dbInitializer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db2, err := dbInitializer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+
+	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,11 +593,16 @@ func Test_BASSparseMerkleTree_RollbackAfterRecovery(t *testing.T) {
 	for _, env := range prepareEnv(t) {
 		t.Logf("test [%s]", env.tag)
 		testRollbackRecovery(t, env.hasher, env.db)
-		env.db.Close()
 	}
 }
 
-func testReset(t *testing.T, hasher *Hasher, db database.TreeDB) {
+func testReset(t *testing.T, hasher *Hasher, dbInitializer func() (database.TreeDB, error)) {
+	db, err := dbInitializer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
 	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
@@ -487,11 +640,16 @@ func Test_BASSparseMerkleTree_Reset(t *testing.T) {
 	for _, env := range prepareEnv(t) {
 		t.Logf("test [%s]", env.tag)
 		testReset(t, env.hasher, env.db)
-		env.db.Close()
 	}
 }
 
-func testGC(t *testing.T, hasher *Hasher, db database.TreeDB) {
+func testGC(t *testing.T, hasher *Hasher, dbInitializer func() (database.TreeDB, error)) {
+	db, err := dbInitializer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
 	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash,
 		GCThreshold(1024*10))
 	if err != nil {
@@ -596,6 +754,5 @@ func Test_BASSparseMerkleTree_GC(t *testing.T) {
 	for _, env := range prepareEnv(t) {
 		t.Logf("test [%s]", env.tag)
 		testGC(t, env.hasher, env.db)
-		env.db.Close()
 	}
 }

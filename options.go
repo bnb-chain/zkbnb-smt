@@ -7,6 +7,7 @@ package bsmt
 
 import (
 	"github.com/bnb-chain/zkbnb-smt/metrics"
+	"github.com/panjf2000/ants/v2"
 )
 
 // Option is a function that configures SMT.
@@ -27,6 +28,12 @@ func BatchSizeLimit(limit int) Option {
 func DBCacheSize(size int) Option {
 	return func(smt *BASSparseMerkleTree) {
 		smt.dbCacheSize = size
+	}
+}
+
+func GoRoutinePool(pool *ants.Pool) Option {
+	return func(smt *BASSparseMerkleTree) {
+		smt.goroutinePool = pool
 	}
 }
 

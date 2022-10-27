@@ -423,7 +423,7 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 	return nil
 }
 
-func (tree *BASSparseMerkleTree) MultiSet(items ...Item) error {
+func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -462,6 +462,7 @@ func (tree *BASSparseMerkleTree) MultiSet(items ...Item) error {
 		tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode)
 
 		// recompute root hash of middle nodes in parallel
+		// TODO: Improved parallel computation for each depth, avoiding double computation of hashes
 		wg.Add(1)
 		func(child *TreeNode) {
 			tree.goroutinePool.Submit(func() {

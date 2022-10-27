@@ -16,7 +16,7 @@ type (
 		Size() uint64
 		Get(key uint64, version *Version) ([]byte, error)
 		Set(key uint64, val []byte) error
-		MultiSet(items ...Item) error
+		MultiSet(items []Item) error
 		IsEmpty() bool
 		Root() []byte
 		GetProof(key uint64) (Proof, error)

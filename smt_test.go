@@ -335,7 +335,7 @@ func testMultiSet(t *testing.T, hasher *Hasher, dbInitializer func() (database.T
 	}
 
 	t.Log("set data")
-	err = smt.MultiSet(testKVData...)
+	err = smt.MultiSet(testKVData)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -84,7 +84,7 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 	}
 
 	if smt.goroutinePool == nil {
-		smt.goroutinePool, err = ants.NewPool(1024)
+		smt.goroutinePool, err = ants.NewPool(128)
 		if err != nil {
 			return nil, err
 		}

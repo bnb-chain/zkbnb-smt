@@ -49,6 +49,7 @@ type TreeNode struct {
 	temporary    bool
 }
 
+// Root Get latest hash of a node
 func (node *TreeNode) Root() []byte {
 	node.mu.RLock()
 	defer node.mu.RUnlock()

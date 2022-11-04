@@ -29,6 +29,7 @@ var (
 	sep                       = []byte(`:`)
 )
 
+// Encode key, format: t:${depth}:${path}
 func storageFullTreeNodeKey(depth uint8, path uint64) []byte {
 	pathBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(pathBuf, path)
@@ -398,7 +399,9 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 	var depth uint8 = 4
 	var parentNodes = make([]*TreeNode, 0, tree.maxDepth/4)
 	for i := 0; i < int(tree.maxDepth)/4; i++ {
+		// path <= 2^maxDepth - 1
 		path := key >> (int(tree.maxDepth) - (i+1)*4)
+		// position in treeNode, nibble <= 0xf
 		nibble := path & 0x000000000000000f
 		parentNodes = append(parentNodes, targetNode.Copy())
 		if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {
@@ -443,14 +446,17 @@ func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
 
 		// find middle nodes
 		for i := 0; i < int(tree.maxDepth)/4; i++ {
+			// path <= 2^maxDepth - 1
 			path := key >> (int(tree.maxDepth) - (i+1)*4)
+			// position in treeNode, nibble <= 0xf
 			nibble := path & 0x000000000000000f
 
-			// skip the exist node
+			// skip existed node
 			if _, exist := tmpJournal.get(journalKey{targetNode.depth, targetNode.path}); !exist {
 				tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode.Copy())
 			}
 
+			// create a new treeNode in targetNode
 			if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {
 				return err
 			}

@@ -8,15 +8,16 @@ package bsmt
 import (
 	"bytes"
 	"crypto/sha256"
-	"hash"
-	"testing"
-
+	"fmt"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
+	"hash"
+	"testing"
+	"time"
 
 	"github.com/bnb-chain/zkbnb-smt/database"
 	wrappedLevelDB "github.com/bnb-chain/zkbnb-smt/database/leveldb"
@@ -754,5 +755,178 @@ func Test_BASSparseMerkleTree_GC(t *testing.T) {
 	for _, env := range prepareEnv(t) {
 		t.Logf("test [%s]", env.tag)
 		testGC(t, env.hasher, env.db)
+	}
+}
+
+func Test_BASSparseMerkleTree_MultiUpdate(t *testing.T) {
+	rawKvs := map[uint64]string{
+		1:   "val1",
+		2:   "val2",
+		3:   "val3",
+		4:   "val4",
+		5:   "val5",
+		6:   "val6",
+		7:   "val7",
+		8:   "val8",
+		9:   "val9",
+		10:  "val10",
+		11:  "val11",
+		12:  "val12",
+		13:  "val13",
+		14:  "val14",
+		200: "val200",
+		20:  "val20",
+		21:  "val21",
+		22:  "val22",
+		23:  "val23",
+		24:  "val24",
+		26:  "val26",
+		37:  "val37",
+		255: "val255",
+		254: "val254",
+		253: "val253",
+		252: "val252",
+		251: "val251",
+		250: "val250",
+		249: "val249",
+		248: "val248",
+		247: "val247",
+		15:  "val15",
+	}
+
+	depth := []uint8{8, 16, 32}
+	for _, env := range prepareEnv(t) {
+		t.Logf("test [%s]", env.tag)
+		var items []Item
+		for k, v := range rawKvs {
+			items = append(items, Item{
+				Key: k,
+				Val: env.hasher.Hash([]byte(v)),
+			})
+		}
+		for _, d := range depth {
+			testMultiUpdate(t, env, items, d)
+		}
+	}
+}
+
+func testMultiUpdate(t *testing.T, env testEnv, items []Item, depth uint8) {
+	t.Logf("test depth %d", depth)
+	db1, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	db2, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db1.Close()
+	defer db2.Close()
+	smt1 := newSMT(t, env.hasher, db1, depth)
+	smt2 := newSMT(t, env.hasher, db2, depth)
+
+	starT1 := time.Now()
+	err = smt1.MultiUpdate(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc1 := time.Since(starT1)
+	fmt.Printf("MultiUpdate time cost %v, depth %d, keys %d\n", tc1, depth, len(items))
+
+	_, err = smt1.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	starT2 := time.Now()
+	err = smt2.MultiSet(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc2 := time.Since(starT2)
+	fmt.Printf("MultiSet    time cost %v, depth %d, keys %d\n", tc2, depth, len(items))
+	_, err = smt2.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	verifyItems(t, smt1, smt2, items)
+}
+
+func newSMT(t *testing.T, hasher *Hasher, db database.TreeDB, maxDepth uint8) SparseMerkleTree {
+	smt, err := NewBASSparseMerkleTree(hasher, db, maxDepth, nilHash,
+		GCThreshold(1024*10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return smt
+}
+
+func Test_BASSparseMerkleTree_Set(t *testing.T) {
+	for _, env := range prepareEnv(t) {
+		t.Logf("test [%s]", env.tag)
+		testSet(t, env, 8)
+	}
+}
+
+func testSet(t *testing.T, env testEnv, depth uint8) {
+	t.Logf("test depth %d", depth)
+	db1, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	db2, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+
+	items := []Item{{201, env.hasher.Hash([]byte("val201"))}}
+	smt1 := newSMT(t, env.hasher, db1, depth)
+	smt1.Set(items[0].Key, items[0].Val)
+	_, err = smt1.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	smt2 := newSMT(t, env.hasher, db1, depth)
+	smt2.MultiSet(items)
+	_, err = smt2.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	verifyItems(t, smt1, smt2, items)
+}
+
+func verifyItems(t *testing.T, smt1 SparseMerkleTree, smt2 SparseMerkleTree, items []Item) {
+	if !bytes.Equal(smt1.Root(), smt2.Root()) {
+		t.Fatalf("root hash does not match, keys %d, %x, %x\n", len(items), smt1.Root(), smt2.Root())
+	}
+
+	for _, item := range items {
+		val, err := smt1.Get(item.Key, nil)
+		if err != nil {
+			t.Fatal("get key from tree1 failed", item.Key, err)
+		}
+		val2, err := smt2.Get(item.Key, nil)
+		if err != nil {
+			t.Fatal("get key from tree2 failed", item.Key, err)
+		}
+		if !bytes.Equal(val, val2) {
+			t.Fatalf("leaf node does not match, %x, %x\n", val, val2)
+		}
+		if !bytes.Equal(val, item.Val) {
+			t.Fatalf("leaf node does not match the origin, %x, %x\n", val, item.Val)
+		}
+
+		proof, err := smt1.GetProof(item.Key)
+		if err != nil {
+			t.Fatal("get proof from tree1 failed", item.Key, err)
+		}
+
+		if !smt2.VerifyProof(item.Key, proof) {
+			t.Fatal("verify proof from tree2 failed")
+		}
 	}
 }

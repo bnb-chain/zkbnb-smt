@@ -506,6 +506,134 @@ func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
 	return nil
 }
 
+func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
+	if len(items) == 0 {
+		return nil
+	}
+	newVersion := tree.version + 1
+	targetNode := tree.root
+	tmpJournal := newJournal()
+	wg := sync.WaitGroup{}
+	depthInter := make(map[uint8][]*TreeNode)
+	targets := newNodeWithNibble(tmpJournal)
+	for _, item := range items {
+		if item.Key >= 1<<tree.maxDepth {
+			return ErrInvalidKey
+		}
+		var (
+			key         = item.Key
+			val         = item.Val
+			depth uint8 = 4
+		)
+
+		// find middle nodes
+		for i := 0; i < int(tree.maxDepth)/4; i++ {
+			// path <= 2^maxDepth - 1
+			path := key >> (int(tree.maxDepth) - (i+1)*4)
+			// position in treeNode, nibble <= 0xf
+			nibble := path & 0x000000000000000f
+
+			// skip existed node
+			if _, exist := tmpJournal.get(journalKey{targetNode.depth, targetNode.path}); !exist {
+				tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode.Copy())
+			}
+
+			// add nibbles to parent
+			keys := hashesToCompute(nibble)
+			targets.setNibbles(journalKey{depth: depth - 4, path: path >> 4}, keys)
+
+			// create a new treeNode in targetNode
+			if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {
+				return err
+			}
+
+			targetNode = targetNode.Children[nibble]
+			depth += 4
+		}
+		targetNode = targetNode.Copy()
+		//targets.setNibbles(journalKey{targetNode.depth, targetNode.path}, hashesToCompute(key&0x000000000000000f))
+		targetNode.Set(val, newVersion) // update hash of leaf node
+		tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode)
+
+		// recompute root hash of middle nodes in parallel
+		// TODO: Improved parallel computation for each depth, avoiding double computation of hashes
+		wg.Add(1)
+		func(child *TreeNode) {
+			tree.goroutinePool.Submit(func() {
+				defer wg.Done()
+				for child != nil {
+					parentKey := journalKey{depth: child.depth - 4, path: child.path >> 4}
+					parent, exist := tmpJournal.get(parentKey)
+					if !exist {
+						// skip if the parent is not exist
+						return
+					}
+					parent.SetChildrenOnly(child, int(child.path&0x000000000000000f), newVersion)
+
+					// update child to parent node
+					//parent.SetChildren(child, int(child.path&0x000000000000000f), newVersion)
+					child = parent
+				}
+			})
+		}(targetNode)
+	}
+	wg.Wait()
+	//_ = targets.iterateNibbles(func(k journalKey, v map[uint64]struct{}) error {
+	//	var nibbles []uint64
+	//	for vk := range v {
+	//		nibbles = append(nibbles, vk)
+	//	}
+	//	fmt.Printf("Target: %d - %d, nibbles: %v\n", k.depth, k.path, nibbles)
+	//	return nil
+	//})
+
+	//for _, c := range newRoot.Children {
+	//	if c != nil && len(c.Versions) > 1 {
+	//		v := c.Versions[len(c.Versions)-1]
+	//		fmt.Printf("Child: %d, version: %d, hash: 0x%x\n", c.path, v.Ver, v.Hash)
+	//	}
+	//}
+
+	_ = tmpJournal.iterate(func(k journalKey, v *TreeNode) error {
+		depthInter[k.depth] = append(depthInter[k.depth], v)
+		return nil
+	})
+
+	for i := int(tree.maxDepth - 4); i >= 0; i -= 4 {
+		//fmt.Println("computing depth: ", i)
+		depthWg := sync.WaitGroup{}
+		depthWg.Add(len(depthInter[uint8(i)]))
+		for _, node := range depthInter[uint8(i)] {
+			func(n *TreeNode) {
+				_ = tree.goroutinePool.Submit(func() {
+					defer depthWg.Done()
+					n.computeInternal(targets.getNibbles(journalKey{
+						depth: n.depth,
+						path:  n.path,
+					}), tree.goroutinePool)
+				})
+			}(node)
+		}
+		depthWg.Wait()
+	}
+
+	// point root node to the new one
+	newRoot, exist := tmpJournal.get(journalKey{tree.root.depth, tree.root.path})
+	if !exist {
+		return ErrUnexpected
+	}
+	//fmt.Printf("Recomputed hash: %x\n", newRoot.Root())
+	tree.root = newRoot
+
+	// flush into journal
+	tmpJournal.iterate(func(key journalKey, val *TreeNode) error {
+		tree.journal.set(key, val)
+		return nil
+	})
+
+	return nil
+}
+
 func (tree *BASSparseMerkleTree) IsEmpty() bool {
 	return bytes.Equal(tree.root.Root(), tree.nilHashes.Get(0))
 }
@@ -850,4 +978,60 @@ func (tree *BASSparseMerkleTree) collectGCMetrics() {
 		}
 	}
 	tree.metrics.GCVersions(gcVersions)
+}
+
+func hashesToCompute(nibble uint64) (keys []uint64) {
+	index := 0
+	for j := 0; j < 3; j++ {
+		inc := int(nibble) / (1 << (3 - j))
+		keys = append(keys, uint64(index+inc))
+		index += 1 << (j + 1)
+	}
+	return
+}
+
+type hashCoordinate struct {
+	depth  uint8
+	nibble uint64
+}
+
+type nodeWithNibble struct {
+	*journal
+	nibbles map[journalKey]map[uint64]struct{}
+}
+
+func newNodeWithNibble(j *journal) *nodeWithNibble {
+	return &nodeWithNibble{
+		journal: j,
+		nibbles: make(map[journalKey]map[uint64]struct{}),
+	}
+}
+
+func (n *nodeWithNibble) getNibbles(k journalKey) map[uint64]struct{} {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.nibbles[k]
+}
+
+func (n *nodeWithNibble) setNibbles(k journalKey, nibbles []uint64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.nibbles[k] == nil {
+		n.nibbles[k] = make(map[uint64]struct{})
+	}
+	for _, ni := range nibbles {
+		n.nibbles[k][ni] = struct{}{}
+	}
+}
+
+func (n *nodeWithNibble) iterateNibbles(callback func(k journalKey, v map[uint64]struct{}) error) error {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	for key, val := range n.nibbles {
+		err := callback(key, val)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

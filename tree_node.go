@@ -7,6 +7,7 @@ package bsmt
 
 import (
 	"github.com/panjf2000/ants/v2"
+	"log"
 	"sort"
 	"sync"
 )
@@ -58,6 +59,14 @@ func (node *TreeNode) Root() []byte {
 	node.mu.RLock()
 	defer node.mu.RUnlock()
 
+	if len(node.Versions) == 0 {
+		return node.nilHash
+	}
+	return node.Versions[len(node.Versions)-1].Hash
+}
+
+// Root Get latest hash of a node without a lock
+func (node *TreeNode) root() []byte {
 	if len(node.Versions) == 0 {
 		return node.nilHash
 	}
@@ -160,59 +169,6 @@ func (node *TreeNode) SetChildrenOnly(child *TreeNode, nibble int, version Versi
 	node.mu.Lock()
 	defer node.mu.Unlock()
 	node.Children[nibble] = child
-	// update current root node
-	//node.newVersion(&VersionInfo{
-	//	Ver:  version,
-	//	Hash: nil,
-	//})
-}
-
-func (node *TreeNode) setChildrenParallel(child *TreeNode, nibble int, version Version, pool *ants.Pool) {
-	node.mu.Lock()
-	defer node.mu.Unlock()
-	node.Children[nibble] = child
-
-	left, right := node.nilChildHash, node.nilChildHash
-	switch nibble % 2 {
-	case 0:
-		if node.Children[nibble] != nil {
-			left = node.Children[nibble].Root()
-		}
-		if node.Children[nibble^1] != nil {
-			right = node.Children[nibble^1].Root()
-		}
-		//fmt.Printf("Will compute leaf %d , %d\n", nibble, nibble^1)
-	case 1:
-		if node.Children[nibble] != nil {
-			right = node.Children[nibble].Root()
-		}
-		if node.Children[nibble^1] != nil {
-			left = node.Children[nibble^1].Root()
-		}
-		//fmt.Printf("Will compute leaf %d , %d\n", nibble^1, nibble)
-	}
-
-	prefix := 6
-	for i := 4; i >= 1; i >>= 1 {
-		nibble = nibble / 2
-		node.Internals[prefix+nibble] = node.hasher.Hash(left, right)
-		switch nibble % 2 {
-		case 0:
-			left = node.Internals[prefix+nibble]
-			right = node.Internals[prefix+nibble^1]
-			//fmt.Printf("Will compute %d , %d\n", prefix+nibble, prefix+nibble^1)
-		case 1:
-			right = node.Internals[prefix+nibble]
-			left = node.Internals[prefix+nibble^1]
-			//fmt.Printf("Will compute %d , %d\n", prefix+nibble^1, prefix+nibble)
-		}
-		prefix = prefix - i
-	}
-	// update current root node
-	node.newVersion(&VersionInfo{
-		Ver:  version,
-		Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
-	})
 }
 
 func (node *TreeNode) SetChildren(child *TreeNode, nibble int, version Version) {
@@ -513,6 +469,15 @@ func (node *TreeNode) latestVersion() Version {
 	return node.Versions[len(node.Versions)-1].Ver
 }
 
+func (node *TreeNode) latestVersionWithLock() Version {
+	node.mu.RLock()
+	defer node.mu.RUnlock()
+	if len(node.Versions) <= 0 {
+		return 0
+	}
+	return node.Versions[len(node.Versions)-1].Ver
+}
+
 func (node *TreeNode) childrenHash(nibble uint64) (left, right []byte) {
 	//orig := nibble
 	if nibble >= 6 {
@@ -535,4 +500,75 @@ func (node *TreeNode) childrenHash(nibble uint64) (left, right []byte) {
 	}
 	//fmt.Printf("find children of %d: %d, %d\n", orig, nibble, nibble^1)
 	return
+}
+
+func (node *TreeNode) recompute(pool *ants.Pool, journals *journal) {
+	version := node.latestVersion()
+	child := node
+	for child != nil {
+		parentKey := journalKey{depth: child.depth - 4, path: child.path >> 4}
+		parent, exist := journals.get(parentKey)
+		if !exist {
+			// skip if the parent is not exist
+			return
+		}
+		parent.calc(child, journals, version)
+		child = parent
+	}
+
+	// 2. we get root hash now, move to compute parent's hash,
+	//		if sibling haven't finished yet,quit; sibling will be charge for computing
+
+	log.Println("compute finished")
+	//ch <- journalKey{node.depth, `node.`path}
+}
+
+func (node *TreeNode) calc(child *TreeNode, journals *journal, version Version) {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+	// for all children, calc hash in parallel
+	nibble := int(child.path & 0xf)
+	node.Children[nibble] = child
+	// 1. recompute inner node in parallel
+	left, right := node.nilChildHash, node.nilChildHash
+	switch nibble % 2 {
+	case 0:
+		left = child.root()
+		if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
+			if version > sibling.latestVersionWithLock() {
+				return
+			}
+			right = sibling.root()
+		}
+	case 1:
+		right = child.root()
+		if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
+			if version > sibling.latestVersionWithLock() {
+				return
+			}
+			left = sibling.root()
+		}
+	}
+
+	prefix := 6
+	for i := 4; i >= 1; i >>= 1 {
+		nibble = nibble / 2
+		node.Internals[prefix+nibble] = node.hasher.Hash(left, right)
+		switch nibble % 2 {
+		case 0:
+			left = node.Internals[prefix+nibble]
+			right = node.Internals[prefix+nibble^1]
+			//fmt.Printf("Will compute %d , %d\n", prefix+nibble, prefix+nibble^1)
+		case 1:
+			right = node.Internals[prefix+nibble]
+			left = node.Internals[prefix+nibble^1]
+			//fmt.Printf("Will compute %d , %d\n", prefix+nibble^1, prefix+nibble)
+		}
+		prefix = prefix - i
+	}
+	// update current root node
+	node.newVersion(&VersionInfo{
+		Ver:  version,
+		Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
+	})
 }

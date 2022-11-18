@@ -8,15 +8,17 @@ package bsmt
 import (
 	"bytes"
 	"crypto/sha256"
-	"hash"
-	"testing"
-
+	"fmt"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
+	"hash"
+	"sync"
+	"testing"
+	"time"
 
 	"github.com/bnb-chain/zkbnb-smt/database"
 	wrappedLevelDB "github.com/bnb-chain/zkbnb-smt/database/leveldb"
@@ -273,124 +275,6 @@ func Test_BASSparseMerkleTree_Proof(t *testing.T) {
 	for _, env := range prepareEnv(t) {
 		t.Logf("test [%s]", env.tag)
 		testProof(t, env.hasher, env.db)
-	}
-}
-
-func testMultiSet(t *testing.T, hasher *Hasher, dbInitializer func() (database.TreeDB, error)) {
-	db, err := dbInitializer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash,
-		GCThreshold(1024*10))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	db2, err := dbInitializer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db2.Close()
-	smt2, err := NewBASSparseMerkleTree(hasher, db2, 8, nilHash,
-		GCThreshold(1024*10))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	testKVData := []Item{
-		{1, hasher.Hash([]byte("val1"))},
-		{2, hasher.Hash([]byte("val2"))},
-		{3, hasher.Hash([]byte("val3"))},
-		{4, hasher.Hash([]byte("val4"))},
-		{5, hasher.Hash([]byte("val5"))},
-		{6, hasher.Hash([]byte("val6"))},
-		{7, hasher.Hash([]byte("val7"))},
-		{8, hasher.Hash([]byte("val8"))},
-		{9, hasher.Hash([]byte("val9"))},
-		{10, hasher.Hash([]byte("val10"))},
-		{11, hasher.Hash([]byte("val11"))},
-		{12, hasher.Hash([]byte("val12"))},
-		{13, hasher.Hash([]byte("val13"))},
-		{14, hasher.Hash([]byte("val14"))},
-		{200, hasher.Hash([]byte("val200"))},
-		{20, hasher.Hash([]byte("val20"))},
-		{21, hasher.Hash([]byte("val21"))},
-		{22, hasher.Hash([]byte("val22"))},
-		{23, hasher.Hash([]byte("val23"))},
-		{24, hasher.Hash([]byte("val24"))},
-		{26, hasher.Hash([]byte("val26"))},
-		{37, hasher.Hash([]byte("val37"))},
-		{255, hasher.Hash([]byte("val255"))},
-		{254, hasher.Hash([]byte("val254"))},
-		{253, hasher.Hash([]byte("val253"))},
-		{252, hasher.Hash([]byte("val252"))},
-		{251, hasher.Hash([]byte("val251"))},
-		{250, hasher.Hash([]byte("val250"))},
-		{249, hasher.Hash([]byte("val249"))},
-		{248, hasher.Hash([]byte("val248"))},
-		{247, hasher.Hash([]byte("val247"))},
-		{15, hasher.Hash([]byte("val15"))},
-	}
-
-	t.Log("set data")
-	err = smt.MultiSet(testKVData)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = smt.Commit(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, item := range testKVData {
-		err := smt2.Set(item.Key, item.Val)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	_, err = smt2.Commit(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !bytes.Equal(smt.Root(), smt2.Root()) {
-		t.Fatalf("root hash does not match, %x, %x\n", smt.Root(), smt2.Root())
-	}
-
-	for _, item := range testKVData {
-		val, err := smt.Get(item.Key, nil)
-		if err != nil {
-			t.Fatal("get key from tree1 failed", item.Key, err)
-		}
-		val2, err := smt2.Get(item.Key, nil)
-		if err != nil {
-			t.Fatal("get key from tree2 failed", item.Key, err)
-		}
-		if !bytes.Equal(val, val2) {
-			t.Fatalf("leaf node does not match, %x, %x\n", val, val2)
-		}
-		if !bytes.Equal(val, item.Val) {
-			t.Fatalf("leaf node does not match the origin, %x, %x\n", val, item.Val)
-		}
-
-		proof, err := smt.GetProof(item.Key)
-		if err != nil {
-			t.Fatal("get proof from tree1 failed", item.Key, err)
-		}
-
-		if !smt2.VerifyProof(item.Key, proof) {
-			t.Fatal("verify proof from tree2 failed")
-		}
-	}
-}
-
-func Test_BASSparseMerkleTree_MultiSet(t *testing.T) {
-	for _, env := range prepareEnv(t) {
-		t.Logf("test [%s]", env.tag)
-		testMultiSet(t, env.hasher, env.db)
 	}
 }
 
@@ -754,5 +638,282 @@ func Test_BASSparseMerkleTree_GC(t *testing.T) {
 	for _, env := range prepareEnv(t) {
 		t.Logf("test [%s]", env.tag)
 		testGC(t, env.hasher, env.db)
+	}
+}
+
+func Test_BASSparseMerkleTree_MultiSet(t *testing.T) {
+	rawKvs := map[uint64]string{
+		1:   "val1",
+		2:   "val2",
+		3:   "val3",
+		4:   "val4",
+		5:   "val5",
+		6:   "val6",
+		7:   "val7",
+		8:   "val8",
+		9:   "val9",
+		10:  "val10",
+		11:  "val11",
+		12:  "val12",
+		13:  "val13",
+		14:  "val14",
+		200: "val200",
+		20:  "val20",
+		21:  "val21",
+		22:  "val22",
+		23:  "val23",
+		24:  "val24",
+		26:  "val26",
+		37:  "val37",
+		255: "val255",
+		254: "val254",
+		253: "val253",
+		252: "val252",
+		251: "val251",
+		250: "val250",
+		249: "val249",
+		248: "val248",
+		247: "val247",
+		15:  "val15",
+	}
+
+	depth := []uint8{8, 16, 32}
+	for _, env := range prepareEnv(t) {
+		t.Logf("test [%s]", env.tag)
+		var items []Item
+		for k, v := range rawKvs {
+			items = append(items, Item{
+				Key: k,
+				Val: env.hasher.Hash([]byte(v)),
+			})
+		}
+		for _, d := range depth {
+			testMultiSet(t, env, items, d)
+		}
+	}
+}
+
+func Test_MultiSet_Parallel(t *testing.T) {
+	memEnv := prepareEnv(t)[0]
+	items := []Item{
+		{1, memEnv.hasher.Hash([]byte("val1"))},
+		{2, memEnv.hasher.Hash([]byte("val2"))},
+		{3, memEnv.hasher.Hash([]byte("val3"))},
+		{4, memEnv.hasher.Hash([]byte("val4"))},
+		{5, memEnv.hasher.Hash([]byte("val5"))},
+		{6, memEnv.hasher.Hash([]byte("val6"))},
+		{7, memEnv.hasher.Hash([]byte("val7"))},
+		{8, memEnv.hasher.Hash([]byte("val8"))},
+		{9, memEnv.hasher.Hash([]byte("val9"))},
+		{10, memEnv.hasher.Hash([]byte("val10"))},
+		{11, memEnv.hasher.Hash([]byte("val11"))},
+		{12, memEnv.hasher.Hash([]byte("val12"))},
+		{13, memEnv.hasher.Hash([]byte("val13"))},
+		{14, memEnv.hasher.Hash([]byte("val14"))},
+		{200, memEnv.hasher.Hash([]byte("val200"))},
+		{20, memEnv.hasher.Hash([]byte("val20"))},
+		{21, memEnv.hasher.Hash([]byte("val21"))},
+		{22, memEnv.hasher.Hash([]byte("val22"))},
+		{23, memEnv.hasher.Hash([]byte("val23"))},
+		{24, memEnv.hasher.Hash([]byte("val24"))},
+		{26, memEnv.hasher.Hash([]byte("val26"))},
+		{37, memEnv.hasher.Hash([]byte("val37"))},
+		{255, memEnv.hasher.Hash([]byte("val255"))},
+		{254, memEnv.hasher.Hash([]byte("val254"))},
+		{253, memEnv.hasher.Hash([]byte("val253"))},
+		{252, memEnv.hasher.Hash([]byte("val252"))},
+		{251, memEnv.hasher.Hash([]byte("val251"))},
+		{250, memEnv.hasher.Hash([]byte("val250"))},
+		{249, memEnv.hasher.Hash([]byte("val249"))},
+		{248, memEnv.hasher.Hash([]byte("val248"))},
+		{247, memEnv.hasher.Hash([]byte("val247"))},
+		{15, memEnv.hasher.Hash([]byte("val15"))},
+	}
+	total := 100
+	wg := sync.WaitGroup{}
+	wg.Add(total)
+	m1 := sync.Mutex{}
+	m2 := sync.Mutex{}
+	d1 := time.Duration(0)
+	d2 := time.Duration(0)
+	for i := 0; i < total; i++ {
+		go func() {
+			defer wg.Done()
+			t1, t2 := testMultiSet(t, memEnv, items, 8)
+			m1.Lock()
+			d1 += t1
+			m1.Unlock()
+			m2.Lock()
+			d2 += t2
+			m2.Unlock()
+		}()
+	}
+	wg.Wait()
+	fmt.Printf("average time cost of MultiSet: %v\n", d1/time.Duration(total))
+	fmt.Printf("average time cost of sequential: %v\n", d2/time.Duration(total))
+}
+
+func Test_SingleMultiSet(t *testing.T) {
+	memEnv := prepareEnv(t)[0]
+	items := []Item{
+		//{Key: 0, Val: memEnv.hasher.Hash([]byte("val0"))},
+		//{Key: 1, Val: memEnv.hasher.Hash([]byte("val1"))},
+		{1, memEnv.hasher.Hash([]byte("val1"))},
+		{2, memEnv.hasher.Hash([]byte("val2"))},
+		{3, memEnv.hasher.Hash([]byte("val3"))},
+		{4, memEnv.hasher.Hash([]byte("val4"))},
+		{5, memEnv.hasher.Hash([]byte("val5"))},
+		{6, memEnv.hasher.Hash([]byte("val6"))},
+		{7, memEnv.hasher.Hash([]byte("val7"))},
+		{8, memEnv.hasher.Hash([]byte("val8"))},
+		{9, memEnv.hasher.Hash([]byte("val9"))},
+		{10, memEnv.hasher.Hash([]byte("val10"))},
+		{11, memEnv.hasher.Hash([]byte("val11"))},
+		{12, memEnv.hasher.Hash([]byte("val12"))},
+		{13, memEnv.hasher.Hash([]byte("val13"))},
+		{14, memEnv.hasher.Hash([]byte("val14"))},
+		{200, memEnv.hasher.Hash([]byte("val200"))},
+		{20, memEnv.hasher.Hash([]byte("val20"))},
+		{21, memEnv.hasher.Hash([]byte("val21"))},
+		{22, memEnv.hasher.Hash([]byte("val22"))},
+		{23, memEnv.hasher.Hash([]byte("val23"))},
+		{24, memEnv.hasher.Hash([]byte("val24"))},
+		{26, memEnv.hasher.Hash([]byte("val26"))},
+		{37, memEnv.hasher.Hash([]byte("val37"))},
+		{255, memEnv.hasher.Hash([]byte("val255"))},
+		{254, memEnv.hasher.Hash([]byte("val254"))},
+		{253, memEnv.hasher.Hash([]byte("val253"))},
+		{252, memEnv.hasher.Hash([]byte("val252"))},
+		{251, memEnv.hasher.Hash([]byte("val251"))},
+		{250, memEnv.hasher.Hash([]byte("val250"))},
+		{249, memEnv.hasher.Hash([]byte("val249"))},
+		{248, memEnv.hasher.Hash([]byte("val248"))},
+		{247, memEnv.hasher.Hash([]byte("val247"))},
+	}
+	testMultiSet(t, memEnv, items, 8)
+}
+
+func Test_BASSparseMerkleTree_Set(t *testing.T) {
+	for _, env := range prepareEnv(t) {
+		t.Logf("test [%s]", env.tag)
+		testSet(t, env, 8)
+	}
+}
+
+func testMultiSet(t *testing.T, env testEnv, items []Item, depth uint8) (time.Duration, time.Duration) {
+	t.Logf("test depth %d", depth)
+	db1, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	db2, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db1.Close()
+	defer db2.Close()
+	smt1 := newSMT(t, env.hasher, db1, depth)
+	smt2 := newSMT(t, env.hasher, db2, depth)
+
+	//smt1 MultiSet
+	starT1 := time.Now()
+	err = smt1.MultiSet(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc1 := time.Since(starT1)
+	//fmt.Printf("MultiSet time cost %v, depth %d, keys %d\n", tc1, depth, len(items))
+
+	_, err = smt1.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//smt2 Set sequential
+	starT2 := time.Now()
+	for _, item := range items {
+		err := smt2.Set(item.Key, item.Val)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	tc2 := time.Since(starT2)
+	_, err = smt2.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	verifyItems(t, smt1, smt2, items)
+	return tc1, tc2
+}
+
+func newSMT(t *testing.T, hasher *Hasher, db database.TreeDB, maxDepth uint8) SparseMerkleTree {
+	smt, err := NewBASSparseMerkleTree(hasher, db, maxDepth, nilHash,
+		GCThreshold(1024*10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return smt
+}
+
+func testSet(t *testing.T, env testEnv, depth uint8) {
+	t.Logf("test depth %d", depth)
+	db1, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	db2, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+
+	items := []Item{{201, env.hasher.Hash([]byte("val201"))}}
+	smt1 := newSMT(t, env.hasher, db1, depth)
+	smt1.Set(items[0].Key, items[0].Val)
+	_, err = smt1.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	smt2 := newSMT(t, env.hasher, db1, depth)
+	smt2.MultiSet(items)
+	_, err = smt2.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	verifyItems(t, smt1, smt2, items)
+}
+
+func verifyItems(t *testing.T, smt1 SparseMerkleTree, smt2 SparseMerkleTree, items []Item) {
+	if !bytes.Equal(smt1.Root(), smt2.Root()) {
+		t.Fatalf("root hash does not match, keys %d, %x, %x\n", len(items), smt1.Root(), smt2.Root())
+	}
+
+	for _, item := range items {
+		val, err := smt1.Get(item.Key, nil)
+		if err != nil {
+			t.Fatal("get key from tree1 failed", item.Key, err)
+		}
+		val2, err := smt2.Get(item.Key, nil)
+		if err != nil {
+			t.Fatal("get key from tree2 failed", item.Key, err)
+		}
+		if !bytes.Equal(val, val2) {
+			t.Fatalf("leaf node does not match, %x, %x\n", val, val2)
+		}
+		if !bytes.Equal(val, item.Val) {
+			t.Fatalf("leaf node does not match the origin, %x, %x\n", val, item.Val)
+		}
+
+		proof, err := smt1.GetProof(item.Key)
+		if err != nil {
+			t.Fatal("get proof from tree1 failed", item.Key, err)
+		}
+
+		if !smt2.VerifyProof(item.Key, proof) {
+			t.Fatal("verify proof from tree2 failed")
+		}
 	}
 }

@@ -5,7 +5,9 @@
 
 package bsmt
 
-import "sync"
+import (
+	"sync"
+)
 
 const (
 	hashSize    = 32
@@ -49,10 +51,19 @@ type TreeNode struct {
 	temporary    bool
 }
 
+// Root Get latest hash of a node
 func (node *TreeNode) Root() []byte {
 	node.mu.RLock()
 	defer node.mu.RUnlock()
 
+	if len(node.Versions) == 0 {
+		return node.nilHash
+	}
+	return node.Versions[len(node.Versions)-1].Hash
+}
+
+// Root Get latest hash of a node without a lock
+func (node *TreeNode) root() []byte {
 	if len(node.Versions) == 0 {
 		return node.nilHash
 	}
@@ -321,4 +332,69 @@ func (node *StorageTreeNode) ToTreeNode(depth uint8, nilHashes *nilHashes, hashe
 	}
 
 	return treeNode
+}
+
+func (node *TreeNode) latestVersion() Version {
+	if len(node.Versions) <= 0 {
+		return 0
+	}
+	return node.Versions[len(node.Versions)-1].Ver
+}
+
+func (node *TreeNode) latestVersionWithLock() Version {
+	node.mu.RLock()
+	defer node.mu.RUnlock()
+	if len(node.Versions) <= 0 {
+		return 0
+	}
+	return node.Versions[len(node.Versions)-1].Ver
+}
+
+// recompute inner node
+func (node *TreeNode) recompute(child *TreeNode, journals *journal, version Version) {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+	// for all children, recompute hash in parallel
+	nibble := int(child.path & 0xf)
+	node.Children[nibble] = child
+	left, right := node.nilChildHash, node.nilChildHash
+	// if sibling haven't finished yet,quit; sibling will be charge for computing
+	switch nibble % 2 {
+	case 0:
+		left = child.root()
+		if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
+			if version > sibling.latestVersionWithLock() {
+				return
+			}
+			right = sibling.root()
+		}
+	case 1:
+		right = child.root()
+		if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
+			if version > sibling.latestVersionWithLock() {
+				return
+			}
+			left = sibling.root()
+		}
+	}
+
+	prefix := 6
+	for i := 4; i >= 1; i >>= 1 {
+		nibble = nibble / 2
+		node.Internals[prefix+nibble] = node.hasher.Hash(left, right)
+		switch nibble % 2 {
+		case 0:
+			left = node.Internals[prefix+nibble]
+			right = node.Internals[prefix+nibble^1]
+		case 1:
+			right = node.Internals[prefix+nibble]
+			left = node.Internals[prefix+nibble^1]
+		}
+		prefix = prefix - i
+	}
+	// update current root
+	node.newVersion(&VersionInfo{
+		Ver:  version,
+		Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
+	})
 }

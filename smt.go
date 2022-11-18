@@ -29,6 +29,7 @@ var (
 	sep                       = []byte(`:`)
 )
 
+// Encode key, format: t:${depth}:${path}
 func storageFullTreeNodeKey(depth uint8, path uint64) []byte {
 	pathBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(pathBuf, path)
@@ -398,7 +399,9 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 	var depth uint8 = 4
 	var parentNodes = make([]*TreeNode, 0, tree.maxDepth/4)
 	for i := 0; i < int(tree.maxDepth)/4; i++ {
+		// path <= 2^maxDepth - 1
 		path := key >> (int(tree.maxDepth) - (i+1)*4)
+		// position in treeNode, nibble <= 0xf
 		nibble := path & 0x000000000000000f
 		parentNodes = append(parentNodes, targetNode.Copy())
 		if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {
@@ -423,64 +426,64 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 	return nil
 }
 
+// MultiSet sets k,v pairs in parallel
+//
+// 1. generate all intermediate nodes, with lock;
+// 2. set all leaves, without lock;
+// 3. re-compute hash, care about dependency routes.
 func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
-	if len(items) == 0 {
+	size := len(items)
+	if size == 0 {
 		return nil
 	}
-	newVersion := tree.version + 1
-	targetNode := tree.root
+	// also check len(items) not exceed 2^maxDepth - 1
+	// also check no duplicated keys
 	tmpJournal := newJournal()
+	leavesJournal := newJournal()
+	// should we initialize all intermediate nodes when New SMT? so we can skip this step
 	wg := sync.WaitGroup{}
-	for _, item := range items {
-		if item.Key >= 1<<tree.maxDepth {
-			return ErrInvalidKey
-		}
-		var (
-			key         = item.Key
-			val         = item.Val
-			depth uint8 = 4
-		)
-
-		// find middle nodes
-		for i := 0; i < int(tree.maxDepth)/4; i++ {
-			path := key >> (int(tree.maxDepth) - (i+1)*4)
-			nibble := path & 0x000000000000000f
-
-			// skip the exist node
-			if _, exist := tmpJournal.get(journalKey{targetNode.depth, targetNode.path}); !exist {
-				tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode.Copy())
+	wg.Add(size)
+	maxKey := uint64(1 << tree.maxDepth)
+	errs := make(chan error, size)
+	for _, it := range items {
+		i := it
+		err := tree.goroutinePool.Submit(func() {
+			defer wg.Done()
+			if i.Key >= maxKey {
+				errs <- ErrInvalidKey
 			}
-
-			if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {
-				return err
+			leaf, err := tree.setIntermediateAndLeaves(tmpJournal, i)
+			if err != nil {
+				errs <- err
 			}
-			targetNode = targetNode.Children[nibble]
-			depth += 4
+			if _, exist := leavesJournal.get(journalKey{leaf.depth, leaf.path}); !exist {
+				leavesJournal.set(journalKey{leaf.depth, leaf.path}, leaf)
+			}
+		})
+		if err != nil {
+			return ErrUnexpected
 		}
-		targetNode = targetNode.Copy()
-		targetNode.Set(val, newVersion) // update hash of leaf node
-		tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode)
+	}
+	wg.Wait()
+	close(errs)
+	if err := <-errs; err != nil {
+		return err
+	}
 
-		// recompute root hash of middle nodes in parallel
-		// TODO: Improved parallel computation for each depth, avoiding double computation of hashes
-		wg.Add(1)
-		func(child *TreeNode) {
-			tree.goroutinePool.Submit(func() {
-				defer wg.Done()
-				for child != nil {
-					parentKey := journalKey{depth: child.depth - 4, path: child.path >> 4}
-					parent, exist := tmpJournal.get(parentKey)
-					if !exist {
-						// skip if the parent is not exist
-						return
-					}
-
-					// update child to parent node
-					parent.SetChildren(child, int(child.path&0x000000000000000f), newVersion)
-					child = parent
-				}
-			})
-		}(targetNode)
+	wg.Add(leavesJournal.len())
+	// For treeNode, the concurrency set to the number of leaf nodes
+	err := leavesJournal.iterate(func(k journalKey, v *TreeNode) error {
+		err := tree.goroutinePool.Submit(func() {
+			defer wg.Done()
+			tree.recompute(v, tmpJournal)
+		})
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return ErrUnexpected
 	}
 	wg.Wait()
 
@@ -492,12 +495,49 @@ func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
 	tree.root = newRoot
 
 	// flush into journal
-	tmpJournal.iterate(func(key journalKey, val *TreeNode) error {
+	err = tmpJournal.iterate(func(key journalKey, val *TreeNode) error {
 		tree.journal.set(key, val)
 		return nil
 	})
-
+	if err != nil {
+		return ErrUnexpected
+	}
 	return nil
+}
+
+// return leaf node
+func (tree *BASSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, item Item) (*TreeNode, error) {
+	var (
+		key         = item.Key
+		val         = item.Val
+		depth uint8 = 4
+	)
+	newVersion := tree.version + 1
+	targetNode := tree.root
+	// find middle nodes
+	for i := 0; i < int(tree.maxDepth)/4; i++ {
+		// path <= 2^maxDepth - 1
+		path := key >> (int(tree.maxDepth) - (i+1)*4)
+		// position in treeNode, nibble <= 0xf
+		nibble := path & 0x000000000000000f
+
+		// skip existed node
+		if _, exist := tmpJournal.get(journalKey{targetNode.depth, targetNode.path}); !exist {
+			tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode.Copy())
+		}
+
+		// create a new treeNode in targetNode
+		if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {
+			return nil, ErrExtendNode
+		}
+		targetNode = targetNode.Children[nibble]
+		depth += 4
+	}
+	targetNode = targetNode.Copy()
+	// update hash of leaf node
+	targetNode.Set(val, newVersion)
+	tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode)
+	return targetNode, nil
 }
 
 func (tree *BASSparseMerkleTree) IsEmpty() bool {
@@ -844,4 +884,19 @@ func (tree *BASSparseMerkleTree) collectGCMetrics() {
 		}
 	}
 	tree.metrics.GCVersions(gcVersions)
+}
+
+func (tree *BASSparseMerkleTree) recompute(node *TreeNode, journals *journal) {
+	version := node.latestVersion()
+	child := node
+	for child != nil {
+		parentKey := journalKey{depth: child.depth - 4, path: child.path >> 4}
+		parent, exist := journals.get(parentKey)
+		if !exist {
+			return
+		}
+		// we got root hash now, move to compute parent's hash
+		parent.recompute(child, journals, version)
+		child = parent
+	}
 }

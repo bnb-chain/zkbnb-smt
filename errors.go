@@ -25,4 +25,6 @@ var (
 	ErrInvalidKey = errors.New("invalid key")
 
 	ErrInvalidDepth = errors.New("depth must be a multiple of 4")
+
+	ErrExtendNode = errors.New("extending node error")
 )

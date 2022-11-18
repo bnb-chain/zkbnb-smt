@@ -791,6 +791,13 @@ func Test_SingleMultiSet(t *testing.T) {
 	testMultiSet(t, memEnv, items, 8)
 }
 
+func Test_BASSparseMerkleTree_Set(t *testing.T) {
+	for _, env := range prepareEnv(t) {
+		t.Logf("test [%s]", env.tag)
+		testSet(t, env, 8)
+	}
+}
+
 func testMultiSet(t *testing.T, env testEnv, items []Item, depth uint8) (time.Duration, time.Duration) {
 	//t.Logf("test depth %d", depth)
 	db1, err := env.db()
@@ -845,13 +852,6 @@ func newSMT(t *testing.T, hasher *Hasher, db database.TreeDB, maxDepth uint8) Sp
 		t.Fatal(err)
 	}
 	return smt
-}
-
-func Test_BASSparseMerkleTree_Set(t *testing.T) {
-	for _, env := range prepareEnv(t) {
-		t.Logf("test [%s]", env.tag)
-		testSet(t, env, 8)
-	}
 }
 
 func testSet(t *testing.T, env testEnv, depth uint8) {

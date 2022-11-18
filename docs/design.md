@@ -3,18 +3,21 @@ ZkBNB is an L2 solution based on zk-rollup, which is used to solve the problems 
 
 ### Design
 #### SMT
-The maximum height of SMT is determined. We assume that the leaf node height is 0, and our node height is maxHeight. nilHashes of different heights can be defined.
+The maximum height of SMT is determined. We assume that the height of the leaf node is 0 and the height of the root node is maxHeight. nilHashes of different heights can be defined.
 It can be expressed as a recursion:
 ```
 nilHashes[0] = hash([]byte())
 nilHashes[h] = hash(nilHashes[h-1], nilHashes[h-1])
 ```
-If a node is high, it is an empty node, we use nlHashes[H] to represent it.
-The definition of an empty node is 1. 2. All leaf nodes of the subtree represented by the intermediate node are empty nodes.
+If a node's height is H, and it is an empty node, we use the corresponding nlHashes[H] to represent it.  
+The definition of an empty node is:
+1. The leaf node has not been assigned a value. 
+2. All leaf nodes of the subtree represented by the intermediate node are empty nodes.
 
 The hash algorithm is used to gradually generate intermediate nodes upwards from leaf nodes, until there is only one root node.
 
-The existence proof of the leaf node mainly consists of two data: MerkleProof (uncle node hash by one) and ProofHelper (the position of the representation layer node). Proof of non-existence can be
+The existence proof of the leaf node mainly consists of two data: MerkleProof (hash of sub-nodes by layer) and ProofHelper (the position of the representation layer node).   
+Proof of non-existence can be replaced by the following:
   1. Prove that the value of the parent node of the leaf node is nilHash
   2. Prove that the value of the leaf node itself is nilhash
 

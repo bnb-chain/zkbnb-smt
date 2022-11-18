@@ -7,7 +7,6 @@ package bsmt
 
 import (
 	"github.com/panjf2000/ants/v2"
-	"log"
 	"sort"
 	"sync"
 )
@@ -90,79 +89,6 @@ func (node *TreeNode) newVersion(version *VersionInfo) {
 		return
 	}
 	node.Versions = append(node.Versions, version)
-}
-
-func (node *TreeNode) RecomputeHash(tree *BASSparseMerkleTree) []byte {
-	return nil
-	//node.mu.Lock()
-	//defer node.mu.Unlock()
-	//
-	//node.Children[nibble] = child
-	//
-	//left, right := node.nilChildHash, node.nilChildHash
-	//switch nibble % 2 {
-	//case 0:
-	//	if node.Children[nibble] != nil {
-	//		left = node.Children[nibble].Root()
-	//	}
-	//	if node.Children[nibble^1] != nil {
-	//		right = node.Children[nibble^1].Root()
-	//	}
-	//case 1:
-	//	if node.Children[nibble] != nil {
-	//		right = node.Children[nibble].Root()
-	//	}
-	//	if node.Children[nibble^1] != nil {
-	//		left = node.Children[nibble^1].Root()
-	//	}
-	//}
-	//prefix := 6
-	//for i := 4; i >= 1; i >>= 1 {
-	//	nibble = nibble / 2
-	//	node.Internals[prefix+nibble] = node.hasher.Hash(left, right)
-	//	switch nibble % 2 {
-	//	case 0:
-	//		left = node.Internals[prefix+nibble]
-	//		right = node.Internals[prefix+nibble^1]
-	//	case 1:
-	//		right = node.Internals[prefix+nibble]
-	//		left = node.Internals[prefix+nibble^1]
-	//	}
-	//	prefix = prefix - i
-	//}
-	//// update current root node
-	//node.newVersion(&VersionInfo{
-	//	Ver:  version,
-	//	Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
-	//})
-
-	//depth, path
-	//var left, right *TreeNode
-	//nibble := node.path & 0x000000000000000f
-	//switch nibble % 2 {
-	//case 0:
-	//	if node.Children[nibble] != nil {
-	//		left = node.Children[nibble]
-	//	}
-	//	if node.Children[nibble^1] != nil {
-	//		right = node.Children[nibble^1]
-	//	}
-	//case 1:
-	//	if node.Children[nibble] != nil {
-	//		right = node.Children[nibble]
-	//	}
-	//	if node.Children[nibble^1] != nil {
-	//		left = node.Children[nibble^1]
-	//	}
-	//}
-	//leftHash, rightHash := node.nilChildHash, node.nilChildHash
-	//if left != nil {
-	//	leftHash = left.RecomputeHash(tree)
-	//}
-	//if right != nil {
-	//	rightHash = right.RecomputeHash(tree)
-	//}
-	//return node.hasher.Hash(leftHash, rightHash)
 }
 
 func (node *TreeNode) SetChildrenOnly(child *TreeNode, nibble int, version Version) {
@@ -502,35 +428,15 @@ func (node *TreeNode) childrenHash(nibble uint64) (left, right []byte) {
 	return
 }
 
-func (node *TreeNode) recompute(pool *ants.Pool, journals *journal) {
-	version := node.latestVersion()
-	child := node
-	for child != nil {
-		parentKey := journalKey{depth: child.depth - 4, path: child.path >> 4}
-		parent, exist := journals.get(parentKey)
-		if !exist {
-			// skip if the parent is not exist
-			return
-		}
-		parent.calc(child, journals, version)
-		child = parent
-	}
-
-	// 2. we get root hash now, move to compute parent's hash,
-	//		if sibling haven't finished yet,quit; sibling will be charge for computing
-
-	log.Println("compute finished")
-	//ch <- journalKey{node.depth, `node.`path}
-}
-
-func (node *TreeNode) calc(child *TreeNode, journals *journal, version Version) {
+// recompute inner node
+func (node *TreeNode) recompute(child *TreeNode, journals *journal, version Version) {
 	node.mu.Lock()
 	defer node.mu.Unlock()
-	// for all children, calc hash in parallel
+	// for all children, recompute hash in parallel
 	nibble := int(child.path & 0xf)
 	node.Children[nibble] = child
-	// 1. recompute inner node in parallel
 	left, right := node.nilChildHash, node.nilChildHash
+	// if sibling haven't finished yet,quit; sibling will be charge for computing
 	switch nibble % 2 {
 	case 0:
 		left = child.root()
@@ -558,15 +464,13 @@ func (node *TreeNode) calc(child *TreeNode, journals *journal, version Version) 
 		case 0:
 			left = node.Internals[prefix+nibble]
 			right = node.Internals[prefix+nibble^1]
-			//fmt.Printf("Will compute %d , %d\n", prefix+nibble, prefix+nibble^1)
 		case 1:
 			right = node.Internals[prefix+nibble]
 			left = node.Internals[prefix+nibble^1]
-			//fmt.Printf("Will compute %d , %d\n", prefix+nibble^1, prefix+nibble)
 		}
 		prefix = prefix - i
 	}
-	// update current root node
+	// update current root
 	node.newVersion(&VersionInfo{
 		Ver:  version,
 		Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),

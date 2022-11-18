@@ -907,7 +907,6 @@ func Test_SingleMultiUpdate(t *testing.T) {
 		{249, memEnv.hasher.Hash([]byte("val249"))},
 		{248, memEnv.hasher.Hash([]byte("val248"))},
 		{247, memEnv.hasher.Hash([]byte("val247"))},
-		{15, memEnv.hasher.Hash([]byte("val15"))},
 	}
 	testMultiUpdate(t, memEnv, items, 8)
 }
@@ -927,27 +926,27 @@ func testMultiUpdate(t *testing.T, env testEnv, items []Item, depth uint8) (time
 	smt1 := newSMT(t, env.hasher, db1, depth)
 	smt2 := newSMT(t, env.hasher, db2, depth)
 
-	//smt2.Set(0, env.hasher.Hash([]byte("val00")))
+	//smt2 MultiSet
 	starT2 := time.Now()
 	err = smt2.MultiSet(items)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tc2 := time.Since(starT2)
-	fmt.Printf("MultiSet    time cost %v, depth %d, keys %d\n", tc2, depth, len(items))
+	//fmt.Printf("MultiSet    time cost %v, depth %d, keys %d\n", tc2, depth, len(items))
 	_, err = smt2.Commit(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	//smt1.Set(0, env.hasher.Hash([]byte("val00")))
+	//smt1 MultiUpdate
 	starT1 := time.Now()
 	err = smt1.MultiUpdate(items)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tc1 := time.Since(starT1)
-	fmt.Printf("MultiUpdate time cost %v, depth %d, keys %d\n", tc1, depth, len(items))
+	//fmt.Printf("MultiUpdate time cost %v, depth %d, keys %d\n", tc1, depth, len(items))
 
 	_, err = smt1.Commit(nil)
 	if err != nil {

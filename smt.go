@@ -506,79 +506,65 @@ func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
 	return nil
 }
 
+// MultiUpdate sets k,v pairs in parallel
+//
+// 1. generate all intermediate nodes, with lock;
+// 2. set all leaves, without lock;
+// 3. re-compute hash, care about dependency routes.
 func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
-	if len(items) == 0 {
+	size := len(items)
+	if size == 0 {
 		return nil
 	}
 	// also check len(items) not exceed 2^maxDepth - 1
 	// also check no duplicated keys
 	tmpJournal := newJournal()
 	leavesJournal := newJournal()
-	//wg := sync.WaitGroup{}
 	// should we initialize all intermediate nodes when New SMT? so we can skip this step
-	// 1. generate all intermediate nodes, with lock
-	// 2. set all leaves, without lock
-	// 3. re-compute hash, care about dependency routes
 	wg := sync.WaitGroup{}
-	wg.Add(len(items))
+	wg.Add(size)
 	maxKey := uint64(1 << tree.maxDepth)
+	errs := make(chan error, size)
 	for _, it := range items {
 		i := it
-		tree.goroutinePool.Submit(func() {
+		err := tree.goroutinePool.Submit(func() {
 			defer wg.Done()
 			if i.Key >= maxKey {
-				panic(ErrInvalidKey)
+				errs <- ErrInvalidKey
 			}
-			//tmp, err := tree.setIntermediateAndLeaves(i)
 			leaf, err := tree.setIntermediateAndLeaves(tmpJournal, i)
+			if err != nil {
+				errs <- err
+			}
 			if _, exist := leavesJournal.get(journalKey{leaf.depth, leaf.path}); !exist {
 				leavesJournal.set(journalKey{leaf.depth, leaf.path}, leaf)
 			}
-			if err != nil {
-				panic(err)
-				//fmt.Println(tmp.data)
-			}
 		})
+		if err != nil {
+			return ErrUnexpected
+		}
+	}
+	wg.Wait()
+	close(errs)
+	if err := <-errs; err != nil {
+		return err
 	}
 
-	wg.Wait()
-	//_ = tmpJournal.iterate(func(k journalKey, v *TreeNode) error {
-	//	fmt.Printf("Target: %d - %d, %p\n", k.depth, k.path, v)
-	//	for _, c := range v.Children {
-	//		if c != nil {
-	//			fmt.Printf("  child: %d - %d, %p\n", c.depth, c.path, c)
-	//		}
-	//	}
-	//	return nil
-	//})
-
-	//3. re-compute hash, care about dependency routes
-	leavesSize := leavesJournal.len()
-	wg.Add(leavesSize)
-	//tree.goroutinePool.Submit(func() {
-	//	for {
-	//		select {
-	//		case jk := <-ch:
-	//			log.Printf("received jk: %v\n", jk)
-	//			node, exist := tmpJournal.get(jk)
-	//			if exist {
-	//				tree.goroutinePool.Submit(func() {
-	//					defer wg.Done()
-	//					tree.recompute(jk, node)
-	//				})
-	//			}
-	//		}
-	//	}
-	//})
-	// 对于treeNode来说，并发度只需设置为叶子节点
-	leavesJournal.iterate(func(k journalKey, v *TreeNode) error {
-		// 对每一个treeNode， 如果它的root hash算完了，会得到通知，然后继续往上算， 遇到依赖的hash还未算完，结束，自然会有下一个goroutine来算
-		tree.goroutinePool.Submit(func() {
+	wg.Add(leavesJournal.len())
+	// For treeNode, the concurrency set to the number of leaf nodes
+	err := leavesJournal.iterate(func(k journalKey, v *TreeNode) error {
+		err := tree.goroutinePool.Submit(func() {
 			defer wg.Done()
-			v.recompute(tree.goroutinePool, tmpJournal)
+			tree.recompute(v, tmpJournal)
 		})
+		if err != nil {
+			return err
+		}
 		return nil
 	})
+	if err != nil {
+		return ErrUnexpected
+	}
 	wg.Wait()
 
 	// point root node to the new one
@@ -586,15 +572,16 @@ func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
 	if !exist {
 		return ErrUnexpected
 	}
-	//fmt.Printf("Recomputed hash: %x\n", newRoot.Root())
 	tree.root = newRoot
 
 	// flush into journal
-	tmpJournal.iterate(func(key journalKey, val *TreeNode) error {
+	err = tmpJournal.iterate(func(key journalKey, val *TreeNode) error {
 		tree.journal.set(key, val)
 		return nil
 	})
-
+	if err != nil {
+		return ErrUnexpected
+	}
 	return nil
 }
 
@@ -621,13 +608,14 @@ func (tree *BASSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, i
 
 		// create a new treeNode in targetNode
 		if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {
-			return nil, err
+			return nil, ErrExtendNode
 		}
 		targetNode = targetNode.Children[nibble]
 		depth += 4
 	}
 	targetNode = targetNode.Copy()
-	targetNode.Set(val, newVersion) // update hash of leaf node
+	// update hash of leaf node
+	targetNode.Set(val, newVersion)
 	tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode)
 	return targetNode, nil
 }
@@ -978,62 +966,17 @@ func (tree *BASSparseMerkleTree) collectGCMetrics() {
 	tree.metrics.GCVersions(gcVersions)
 }
 
-func (tree *BASSparseMerkleTree) recompute(k journalKey, v *TreeNode) {
-
-}
-
-func hashesToCompute(nibble uint64) (keys []uint64) {
-	index := 0
-	for j := 0; j < 3; j++ {
-		inc := int(nibble) / (1 << (3 - j))
-		keys = append(keys, uint64(index+inc))
-		index += 1 << (j + 1)
-	}
-	return
-}
-
-type hashCoordinate struct {
-	depth  uint8
-	nibble uint64
-}
-
-type nodeWithNibble struct {
-	*journal
-	nibbles map[journalKey]map[uint64]struct{}
-}
-
-func newNodeWithNibble(j *journal) *nodeWithNibble {
-	return &nodeWithNibble{
-		journal: j,
-		nibbles: make(map[journalKey]map[uint64]struct{}),
-	}
-}
-
-func (n *nodeWithNibble) getNibbles(k journalKey) map[uint64]struct{} {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-	return n.nibbles[k]
-}
-
-func (n *nodeWithNibble) setNibbles(k journalKey, nibbles []uint64) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	if n.nibbles[k] == nil {
-		n.nibbles[k] = make(map[uint64]struct{})
-	}
-	for _, ni := range nibbles {
-		n.nibbles[k][ni] = struct{}{}
-	}
-}
-
-func (n *nodeWithNibble) iterateNibbles(callback func(k journalKey, v map[uint64]struct{}) error) error {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-	for key, val := range n.nibbles {
-		err := callback(key, val)
-		if err != nil {
-			return err
+func (tree *BASSparseMerkleTree) recompute(node *TreeNode, journals *journal) {
+	version := node.latestVersion()
+	child := node
+	for child != nil {
+		parentKey := journalKey{depth: child.depth - 4, path: child.path >> 4}
+		parent, exist := journals.get(parentKey)
+		if !exist {
+			return
 		}
+		// we got root hash now, move to compute parent's hash
+		parent.recompute(child, journals, version)
+		child = parent
 	}
-	return nil
 }

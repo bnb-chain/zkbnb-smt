@@ -278,124 +278,6 @@ func Test_BASSparseMerkleTree_Proof(t *testing.T) {
 	}
 }
 
-func testMultiSet(t *testing.T, hasher *Hasher, dbInitializer func() (database.TreeDB, error)) {
-	db, err := dbInitializer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash,
-		GCThreshold(1024*10))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	db2, err := dbInitializer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db2.Close()
-	smt2, err := NewBASSparseMerkleTree(hasher, db2, 8, nilHash,
-		GCThreshold(1024*10))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	testKVData := []Item{
-		{1, hasher.Hash([]byte("val1"))},
-		{2, hasher.Hash([]byte("val2"))},
-		{3, hasher.Hash([]byte("val3"))},
-		{4, hasher.Hash([]byte("val4"))},
-		{5, hasher.Hash([]byte("val5"))},
-		{6, hasher.Hash([]byte("val6"))},
-		{7, hasher.Hash([]byte("val7"))},
-		{8, hasher.Hash([]byte("val8"))},
-		{9, hasher.Hash([]byte("val9"))},
-		{10, hasher.Hash([]byte("val10"))},
-		{11, hasher.Hash([]byte("val11"))},
-		{12, hasher.Hash([]byte("val12"))},
-		{13, hasher.Hash([]byte("val13"))},
-		{14, hasher.Hash([]byte("val14"))},
-		{200, hasher.Hash([]byte("val200"))},
-		{20, hasher.Hash([]byte("val20"))},
-		{21, hasher.Hash([]byte("val21"))},
-		{22, hasher.Hash([]byte("val22"))},
-		{23, hasher.Hash([]byte("val23"))},
-		{24, hasher.Hash([]byte("val24"))},
-		{26, hasher.Hash([]byte("val26"))},
-		{37, hasher.Hash([]byte("val37"))},
-		{255, hasher.Hash([]byte("val255"))},
-		{254, hasher.Hash([]byte("val254"))},
-		{253, hasher.Hash([]byte("val253"))},
-		{252, hasher.Hash([]byte("val252"))},
-		{251, hasher.Hash([]byte("val251"))},
-		{250, hasher.Hash([]byte("val250"))},
-		{249, hasher.Hash([]byte("val249"))},
-		{248, hasher.Hash([]byte("val248"))},
-		{247, hasher.Hash([]byte("val247"))},
-		{15, hasher.Hash([]byte("val15"))},
-	}
-
-	t.Log("set data")
-	err = smt.MultiSet(testKVData)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = smt.Commit(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, item := range testKVData {
-		err := smt2.Set(item.Key, item.Val)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	_, err = smt2.Commit(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !bytes.Equal(smt.Root(), smt2.Root()) {
-		t.Fatalf("root hash does not match, %x, %x\n", smt.Root(), smt2.Root())
-	}
-
-	for _, item := range testKVData {
-		val, err := smt.Get(item.Key, nil)
-		if err != nil {
-			t.Fatal("get key from tree1 failed", item.Key, err)
-		}
-		val2, err := smt2.Get(item.Key, nil)
-		if err != nil {
-			t.Fatal("get key from tree2 failed", item.Key, err)
-		}
-		if !bytes.Equal(val, val2) {
-			t.Fatalf("leaf node does not match, %x, %x\n", val, val2)
-		}
-		if !bytes.Equal(val, item.Val) {
-			t.Fatalf("leaf node does not match the origin, %x, %x\n", val, item.Val)
-		}
-
-		proof, err := smt.GetProof(item.Key)
-		if err != nil {
-			t.Fatal("get proof from tree1 failed", item.Key, err)
-		}
-
-		if !smt2.VerifyProof(item.Key, proof) {
-			t.Fatal("verify proof from tree2 failed")
-		}
-	}
-}
-
-func Test_BASSparseMerkleTree_MultiSet(t *testing.T) {
-	for _, env := range prepareEnv(t) {
-		t.Logf("test [%s]", env.tag)
-		testMultiSet(t, env.hasher, env.db)
-	}
-}
-
 func testRollback(t *testing.T, hasher *Hasher, dbInitializer func() (database.TreeDB, error)) {
 	db, err := dbInitializer()
 	if err != nil {
@@ -759,7 +641,7 @@ func Test_BASSparseMerkleTree_GC(t *testing.T) {
 	}
 }
 
-func Test_BASSparseMerkleTree_MultiUpdate(t *testing.T) {
+func Test_BASSparseMerkleTree_MultiSet(t *testing.T) {
 	rawKvs := map[uint64]string{
 		1:   "val1",
 		2:   "val2",
@@ -806,12 +688,12 @@ func Test_BASSparseMerkleTree_MultiUpdate(t *testing.T) {
 			})
 		}
 		for _, d := range depth {
-			testMultiUpdate(t, env, items, d)
+			testMultiSet(t, env, items, d)
 		}
 	}
 }
 
-func Test_MultiUpdate_Parallel(t *testing.T) {
+func Test_MultiSet_Parallel(t *testing.T) {
 	memEnv := prepareEnv(t)[0]
 	items := []Item{
 		{1, memEnv.hasher.Hash([]byte("val1"))},
@@ -845,7 +727,6 @@ func Test_MultiUpdate_Parallel(t *testing.T) {
 		{249, memEnv.hasher.Hash([]byte("val249"))},
 		{248, memEnv.hasher.Hash([]byte("val248"))},
 		{247, memEnv.hasher.Hash([]byte("val247"))},
-		{15, memEnv.hasher.Hash([]byte("val15"))},
 	}
 	total := 1000
 	wg := sync.WaitGroup{}
@@ -857,7 +738,7 @@ func Test_MultiUpdate_Parallel(t *testing.T) {
 	for i := 0; i < total; i++ {
 		go func() {
 			defer wg.Done()
-			t1, t2 := testMultiUpdate(t, memEnv, items, 8)
+			t1, t2 := testMultiSet(t, memEnv, items, 40)
 			m1.Lock()
 			d1 += t1
 			m1.Unlock()
@@ -868,10 +749,10 @@ func Test_MultiUpdate_Parallel(t *testing.T) {
 	}
 	wg.Wait()
 	fmt.Printf("average time cost of MultiSet: %v\n", d1/time.Duration(total))
-	fmt.Printf("average time cost of MultiUpdate: %v\n", d2/time.Duration(total))
+	fmt.Printf("average time cost of sequential: %v\n", d2/time.Duration(total))
 }
 
-func Test_SingleMultiUpdate(t *testing.T) {
+func Test_SingleMultiSet(t *testing.T) {
 	memEnv := prepareEnv(t)[0]
 	items := []Item{
 		{Key: 0, Val: memEnv.hasher.Hash([]byte("val0"))},
@@ -907,10 +788,10 @@ func Test_SingleMultiUpdate(t *testing.T) {
 		{248, memEnv.hasher.Hash([]byte("val248"))},
 		{247, memEnv.hasher.Hash([]byte("val247"))},
 	}
-	testMultiUpdate(t, memEnv, items, 8)
+	testMultiSet(t, memEnv, items, 8)
 }
 
-func testMultiUpdate(t *testing.T, env testEnv, items []Item, depth uint8) (time.Duration, time.Duration) {
+func testMultiSet(t *testing.T, env testEnv, items []Item, depth uint8) (time.Duration, time.Duration) {
 	//t.Logf("test depth %d", depth)
 	db1, err := env.db()
 	if err != nil {
@@ -925,29 +806,30 @@ func testMultiUpdate(t *testing.T, env testEnv, items []Item, depth uint8) (time
 	smt1 := newSMT(t, env.hasher, db1, depth)
 	smt2 := newSMT(t, env.hasher, db2, depth)
 
-	//smt2 MultiUpdate
-	starT2 := time.Now()
-	err = smt2.MultiSet(items)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tc2 := time.Since(starT2)
-	//fmt.Printf("MultiSet    time cost %v, depth %d, keys %d\n", tc2, depth, len(items))
-	_, err = smt2.Commit(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	//smt1 MultiSet
 	starT1 := time.Now()
-	err = smt1.MultiUpdate(items)
+	err = smt1.MultiSet(items)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tc1 := time.Since(starT1)
-	//fmt.Printf("MultiUpdate time cost %v, depth %d, keys %d\n", tc1, depth, len(items))
+	//fmt.Printf("MultiSet time cost %v, depth %d, keys %d\n", tc1, depth, len(items))
 
 	_, err = smt1.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//smt2 Set sequential
+	starT2 := time.Now()
+	for _, item := range items {
+		err := smt2.Set(item.Key, item.Val)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	tc2 := time.Since(starT2)
+	_, err = smt2.Commit(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1004,28 +886,6 @@ func testSet(t *testing.T, env testEnv, depth uint8) {
 
 func verifyItems(t *testing.T, smt1 SparseMerkleTree, smt2 SparseMerkleTree, items []Item) {
 	if !bytes.Equal(smt1.Root(), smt2.Root()) {
-		t1 := smt1.(*BASSparseMerkleTree)
-		t2 := smt2.(*BASSparseMerkleTree)
-		for i := 0; i <= int(t1.maxDepth); i += 4 {
-			root1 := t1.root
-			root2 := t2.root
-			for i := 0; i < 16; i++ {
-				child1 := root1.Children[i]
-				child2 := root2.Children[i]
-				if child1 != nil {
-					if !bytes.Equal(child1.root(), child2.root()) {
-						fmt.Printf("hash does not match, keys %d - %d, %x %x\n", child1.depth, child1.path, child1.root(), child2.root())
-						for i := 0; i < 14; i++ {
-							if !bytes.Equal(child1.Internals[i], child2.Internals[i]) {
-								fmt.Printf("Internal not match: idx: %d, %x %x\n", i, child1.Internals[i], child2.Internals[i])
-							}
-						}
-					} else {
-						fmt.Printf("hash matched, keys %d - %d\n", child1.depth, child1.path)
-					}
-				}
-			}
-		}
 		t.Fatalf("root hash does not match, keys %d, %x, %x\n", len(items), smt1.Root(), smt2.Root())
 	}
 
@@ -1054,25 +914,4 @@ func verifyItems(t *testing.T, smt1 SparseMerkleTree, smt2 SparseMerkleTree, ite
 			t.Fatal("verify proof from tree2 failed")
 		}
 	}
-}
-
-func Test_sdf(t *testing.T) {
-	errs := make(chan error, 1)
-	defer close(errs)
-	for i := 0; i < 5; i++ {
-		go func(j int) {
-			time.Sleep(1 * time.Second)
-			if j%2 == 0 {
-				errs <- errors.New(fmt.Sprintf("err %d", j))
-			} else {
-				errs <- nil
-			}
-		}(i)
-	}
-	for i := 0; i < 5; i++ {
-		if err := <-errs; err != nil {
-			fmt.Println(err.Error())
-		}
-	}
-
 }

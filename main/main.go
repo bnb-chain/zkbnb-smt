@@ -86,7 +86,6 @@ func multiUpdateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DoMultiUpdate(env testEnv, items []bsmt.Item, depth uint8) {
-	//fmt.Printf("test depth %d\n", depth)
 	db1, err := env.db()
 	if err != nil {
 		panic(err)
@@ -101,12 +100,12 @@ func DoMultiUpdate(env testEnv, items []bsmt.Item, depth uint8) {
 	//smt2 := NewSMT(env.hasher, db2, depth)
 
 	//starT1 := time.Now()
-	err = smt1.MultiUpdate(items)
+	err = smt1.MultiSet(items)
 	if err != nil {
 		panic(err)
 	}
 	//tc1 := time.Since(starT1)
-	//fmt.Printf("MultiUpdate time cost %v, depth %d, keys %d\n", tc1, depth, len(items))
+	//fmt.Printf("MultiSet time cost %v, depth %d, keys %d\n", tc1, depth, len(items))
 
 	_, err = smt1.Commit(nil)
 	if err != nil {

@@ -6,8 +6,6 @@
 package bsmt
 
 import (
-	"github.com/panjf2000/ants/v2"
-	"sort"
 	"sync"
 )
 
@@ -89,12 +87,6 @@ func (node *TreeNode) newVersion(version *VersionInfo) {
 		return
 	}
 	node.Versions = append(node.Versions, version)
-}
-
-func (node *TreeNode) SetChildrenOnly(child *TreeNode, nibble int, version Version) {
-	node.mu.Lock()
-	defer node.mu.Unlock()
-	node.Children[nibble] = child
 }
 
 func (node *TreeNode) SetChildren(child *TreeNode, nibble int, version Version) {
@@ -306,47 +298,6 @@ func (node *TreeNode) ToStorageTreeNode() *StorageTreeNode {
 	}
 }
 
-func (node *TreeNode) computeInternal(nibbles map[uint64]struct{}, pool *ants.Pool) {
-	if nibbles == nil {
-		return
-	}
-	node.mu.Lock()
-	defer node.mu.Unlock()
-	//fmt.Println("computing child ", node.path)
-	nbArray := make([]uint64, 0, len(nibbles))
-	for nibble := range nibbles {
-		nbArray = append(nbArray, nibble)
-	}
-	sort.Slice(nbArray, func(i, j int) bool { return nbArray[i] > nbArray[j] })
-
-	prefix := 6
-	for i := 4; i >= 1; i >>= 1 {
-		wg := sync.WaitGroup{}
-		for _, n := range nbArray {
-			if int(n) >= prefix && int(n) <= prefix<<1+1 {
-				wg.Add(1)
-				func(ni uint64) {
-					_ = pool.Submit(func() {
-						defer wg.Done()
-						left, right := node.childrenHash(ni)
-						node.Internals[ni] = node.hasher.Hash(left, right)
-					})
-				}(n)
-			}
-		}
-		wg.Wait()
-		prefix = prefix - i
-	}
-
-	// update current root node
-	node.newVersion(&VersionInfo{
-		Ver:  node.latestVersion(),
-		Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
-	})
-}
-
-type nibbles []uint64
-
 type VersionInfo struct {
 	Ver  Version
 	Hash []byte
@@ -402,30 +353,6 @@ func (node *TreeNode) latestVersionWithLock() Version {
 		return 0
 	}
 	return node.Versions[len(node.Versions)-1].Ver
-}
-
-func (node *TreeNode) childrenHash(nibble uint64) (left, right []byte) {
-	//orig := nibble
-	if nibble >= 6 {
-		// find child in leaves
-		// 6: 14(0), 15(1), 8: 18(4), 19(5)
-		nibble <<= 1
-		nibble = nibble + 2 - 14
-		left, right = node.nilChildHash, node.nilChildHash
-		if node.Children[nibble] != nil {
-			left = node.Children[nibble].Root()
-		}
-		if node.Children[nibble^1] != nil {
-			right = node.Children[nibble^1].Root()
-		}
-	} else {
-		// 2: 6, 7      3: 8,9
-		nibble = nibble<<1 + 2
-		left = node.Internals[nibble]
-		right = node.Internals[nibble^1]
-	}
-	//fmt.Printf("find children of %d: %d, %d\n", orig, nibble, nibble^1)
-	return
 }
 
 // recompute inner node

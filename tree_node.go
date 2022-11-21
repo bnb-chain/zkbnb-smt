@@ -6,6 +6,7 @@
 package bsmt
 
 import (
+	"context"
 	"github.com/panjf2000/ants/v2"
 	"sort"
 	"sync"
@@ -23,6 +24,8 @@ func NewTreeNode(depth uint8, path uint64, nilHashes *nilHashes, hasher *Hasher)
 		path:         path,
 		depth:        depth,
 		hasher:       hasher,
+		internalMu:   make([]sync.RWMutex, 14),
+		internalVer:  make([]Version, 14),
 	}
 	for i := 0; i < 2; i++ {
 		treeNode.Internals[i] = nilHashes.Get(depth + 1)
@@ -51,6 +54,8 @@ type TreeNode struct {
 	depth        uint8
 	hasher       *Hasher
 	temporary    bool
+	internalMu   []sync.RWMutex
+	internalVer  []Version
 }
 
 // Root Get latest hash of a node
@@ -182,6 +187,14 @@ func (node *TreeNode) Copy() *TreeNode {
 		depth:        node.depth,
 		hasher:       node.hasher,
 		temporary:    node.temporary,
+		internalMu:   node.internalMu,
+		internalVer:  node.internalVer,
+	}
+}
+
+func (node *TreeNode) mark(nibble int) {
+	for _, i := range leafInternalMap[nibble] {
+		node.Internals[i] = nil
 	}
 }
 
@@ -429,50 +442,198 @@ func (node *TreeNode) childrenHash(nibble uint64) (left, right []byte) {
 }
 
 // recompute inner node
-func (node *TreeNode) recompute(child *TreeNode, journals *journal, version Version) {
-	node.mu.Lock()
-	defer node.mu.Unlock()
+func (node *TreeNode) recompute(child *TreeNode, internalPath *set, journals *journal, version Version) {
+	node.Children[child.path&0xf] = child
+	//node.mu.Lock()
+	//defer node.mu.Unlock()
 	// for all children, recompute hash in parallel
-	nibble := int(child.path & 0xf)
-	node.Children[nibble] = child
-	left, right := node.nilChildHash, node.nilChildHash
-	// if sibling haven't finished yet,quit; sibling will be charge for computing
-	switch nibble % 2 {
-	case 0:
-		left = child.root()
-		if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
-			if version > sibling.latestVersionWithLock() {
-				return
-			}
-			right = sibling.root()
-		}
-	case 1:
-		right = child.root()
-		if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
-			if version > sibling.latestVersionWithLock() {
-				return
-			}
-			left = sibling.root()
-		}
-	}
 
-	prefix := 6
-	for i := 4; i >= 1; i >>= 1 {
-		nibble = nibble / 2
-		node.Internals[prefix+nibble] = node.hasher.Hash(left, right)
-		switch nibble % 2 {
-		case 0:
-			left = node.Internals[prefix+nibble]
-			right = node.Internals[prefix+nibble^1]
-		case 1:
-			right = node.Internals[prefix+nibble]
-			left = node.Internals[prefix+nibble^1]
+	wg := sync.WaitGroup{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for i := 0; i < len(node.Children); i++ {
+		if node.Children[i] == nil {
+			continue
 		}
-		prefix = prefix - i
+		j := i
+		wg.Add(1)
+		go func(nibble int) {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					child := node.Children[nibble]
+					left, right := node.nilChildHash, node.nilChildHash
+					// if sibling haven't finished yet,quit; sibling will be charge for computing
+					switch nibble % 2 {
+					case 0:
+						left = child.root()
+						if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
+							if sibling.latestVersionWithLock() < version {
+								return
+							}
+							right = sibling.root()
+						}
+					case 1:
+						right = child.root()
+						if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
+							if sibling.latestVersionWithLock() < version {
+								return
+							}
+							left = sibling.root()
+						}
+					}
+					prefix := 6
+					for i := 4; i >= 1; i >>= 1 {
+						nibble = nibble / 2
+						hash := node.setInternal(prefix+nibble, left, right, version)
+						//node.Internals[prefix+nibble] = node.hasher.Hash(left, right)
+						siblingNibble := prefix + nibble ^ 1
+						switch nibble % 2 {
+						case 0:
+							left = hash
+							if node.Internals[siblingNibble] == nil {
+								return
+							} else {
+								right = node.Internals[siblingNibble]
+							}
+							//if internalPath.has(siblingNibble) {
+							//	if right = node.getInternal(siblingNibble, version); right == nil {
+							//		return
+							//	}
+							//}
+
+						case 1:
+							right = hash
+							if node.Internals[siblingNibble] == nil {
+								return
+							} else {
+								left = node.Internals[siblingNibble]
+							}
+							//if internalPath.has(siblingNibble) {
+							//	if left = node.getInternal(siblingNibble, version); left == nil {
+							//		return
+							//	}
+							//}
+						}
+						prefix = prefix - i
+					}
+					// update current root
+					node.newVersion(&VersionInfo{
+						Ver:  version,
+						Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
+					})
+					cancel()
+
+					//for depth != 0 {
+					//	if leaf {
+					//		left, right := node.Children[i], node.Children[i^1]
+					//	} else {
+					//		node.internalNode[i].RLock()
+					//		left, right := node.Internals[i], node.Internals[i^1]
+					//		node.internalNode[i].RUnlock()
+					//		if left != latestVersion || right != latestVersion {
+					//			return
+					//		}
+					//	}
+					//	node.internalNode[x].Lock()
+					//	node.Internals[x] = node.hasher.Hash(left, right)
+					//	node.internalNode[x].Unlock()
+					//}
+					//if already calc root {
+					//	cancel()
+					//}
+				}
+			}
+		}(j)
 	}
-	// update current root
-	node.newVersion(&VersionInfo{
-		Ver:  version,
-		Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
-	})
+	wg.Wait()
+
+	//nibble := int(child.path & 0xf)
+	//node.Children[nibble] = child
+	//left, right := node.nilChildHash, node.nilChildHash
+	//// if sibling haven't finished yet,quit; sibling will be charge for computing
+	//switch nibble % 2 {
+	//case 0:
+	//	left = child.root()
+	//	if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
+	//		if version > sibling.latestVersionWithLock() {
+	//			return
+	//		}
+	//		right = sibling.root()
+	//	}
+	//case 1:
+	//	right = child.root()
+	//	if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
+	//		if version > sibling.latestVersionWithLock() {
+	//			return
+	//		}
+	//		left = sibling.root()
+	//	}
+	//}
+	//
+	//prefix := 6
+	//for i := 4; i >= 1; i >>= 1 {
+	//	nibble = nibble / 2
+	//	node.Internals[prefix+nibble] = node.hasher.Hash(left, right)
+	//	switch nibble % 2 {
+	//	case 0:
+	//		left = node.Internals[prefix+nibble]
+	//		right = node.Internals[prefix+nibble^1]
+	//	case 1:
+	//		right = node.Internals[prefix+nibble]
+	//		left = node.Internals[prefix+nibble^1]
+	//	}
+	//	prefix = prefix - i
+	//}
+	//// update current root
+	//node.newVersion(&VersionInfo{
+	//	Ver:  version,
+	//	Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
+	//})
+}
+
+func (node *TreeNode) setInternal(idx int, left []byte, right []byte, version Version) []byte {
+	node.internalMu[idx].Lock()
+	defer node.internalMu[idx].Unlock()
+	hash := node.hasher.Hash(left, right)
+	node.Internals[idx] = hash
+	node.internalVer[idx] = version
+	return hash
+}
+
+func (node *TreeNode) getInternal(idx int, version Version) []byte {
+	node.internalMu[idx].RLock()
+	defer node.internalMu[idx].RUnlock()
+	if node.internalVer[idx] < version {
+		return nil
+	}
+	return node.Internals[idx]
+}
+
+type internalNode struct {
+	mu     sync.RWMutex
+	ver    Version
+	nibble int
+}
+
+var leafInternalMap = map[int][]int{
+	0:  {0, 2, 6},
+	1:  {0, 2, 6},
+	2:  {0, 2, 7},
+	3:  {0, 2, 7},
+	4:  {0, 3, 8},
+	5:  {0, 3, 8},
+	6:  {0, 3, 9},
+	7:  {0, 3, 9},
+	8:  {1, 4, 10},
+	9:  {1, 4, 10},
+	10: {1, 4, 11},
+	11: {1, 4, 11},
+	12: {1, 5, 12},
+	13: {1, 5, 12},
+	14: {1, 5, 13},
+	15: {1, 5, 13},
 }

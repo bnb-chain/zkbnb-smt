@@ -526,7 +526,7 @@ func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
 //
 // 1. generate all intermediate nodes, with lock;
 // 2. set all leaves, without lock;
-// 3. re-compute hash, care about dependency routes.
+// 3. re-compute hash, from leaves to root
 func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
 	size := len(items)
 	if size == 0 {
@@ -534,23 +534,10 @@ func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
 	}
 	// also check len(items) not exceed 2^maxDepth - 1
 	// also check no duplicated keys
-	//internalPath := make(map[journalKey]*set)
 	wg := sync.WaitGroup{}
-	//wg.Add(1)
-	//go func(it []Item) {
-	//	defer wg.Done()
-	//	for k := range it {
-	//		key := journalKey{depth: tree.maxDepth, path: uint64(k)}
-	//		if internalPath[key] == nil {
-	//			internalPath[key] = newSet()
-	//		}
-	//		internalPath[key].addMulti(leafInternalMap[k&0xf]...)
-	//	}
-	//}(items)
 	tmpJournal := newJournal()
 	leavesJournal := newJournal()
 	// should we initialize all intermediate nodes when New SMT? so we can skip this step
-
 	maxKey := uint64(1 << tree.maxDepth)
 	errs := make(chan error, size)
 	for _, it := range items {
@@ -578,26 +565,6 @@ func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
 	if err := <-errs; err != nil {
 		return err
 	}
-
-	//for k, v := range internalPath {
-	//	var ints []int
-	//	for kk := range v.container {
-	//		ints = append(ints, kk)
-	//	}
-	//	fmt.Printf("%d - %d: %v\n", k.depth, k.path, ints)
-	//}
-	//tmpJournal.iterate(func(k journalKey, v *TreeNode) error {
-	//	var idx []int
-	//	for i, b := range v.Internals {
-	//		if v.depth != tree.maxDepth && b == nil {
-	//			idx = append(idx, i)
-	//		}
-	//	}
-	//	if len(idx) > 0 {
-	//		fmt.Printf("nil internal: %d - %d: %v\n", v.depth, v.path, idx)
-	//	}
-	//	return nil
-	//})
 
 	wg.Add(leavesJournal.len())
 	// For treeNode, the concurrency set to the number of leaf nodes
@@ -653,23 +620,7 @@ func (tree *BASSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, i
 		// skip existed node
 		jk := journalKey{targetNode.depth, targetNode.path}
 		cp := tmpJournal.setIfNotExist(jk, targetNode)
-		//cp, exist := tmpJournal.get(jk)
-		//if !exist {
-		//	cp = targetNode.Copy()
-		//	tmpJournal.set(jk, cp)
-		//	if p, e := tmpJournal.get(journalKey{depth: targetNode.depth - 4, path: targetNode.path >> 4}); e {
-		//		p.Children[targetNode.path&0xf] = cp
-		//	}
-		//}
 		cp.mark(int(nibble))
-
-		//if _, exist := tmpJournal.get(journalKey{targetNode.depth, targetNode.path}); !exist {
-		//	node := targetNode.Copy()
-		//	if p, e := tmpJournal.get(journalKey{depth: targetNode.depth - 4, path: targetNode.path >> 4}); e {
-		//		p.Children[targetNode.path&0xf] = node
-		//	}
-		//	tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, node)
-		//}
 
 		// create a new treeNode in targetNode
 		if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {

@@ -7,7 +7,6 @@ package bsmt
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"fmt"
 	"github.com/alicebob/miniredis/v2"
@@ -1054,42 +1053,5 @@ func verifyItems(t *testing.T, smt1 SparseMerkleTree, smt2 SparseMerkleTree, ite
 		if !smt2.VerifyProof(item.Key, proof) {
 			t.Fatal("verify proof from tree2 failed")
 		}
-	}
-}
-
-func Test_sjdfkj(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	wg := sync.WaitGroup{}
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		j := i
-		go func(j int) {
-			defer wg.Done()
-			defer fmt.Println("quit ", j)
-			for {
-				select {
-				case <-ctx.Done():
-					fmt.Println("Read d, finish ", j)
-					return
-				default:
-					if j%2 == 0 {
-						cancel()
-						return
-					}
-					time.Sleep(2 * time.Second)
-					fmt.Println("Run finished ", j)
-				}
-			}
-		}(j)
-	}
-	wg.Wait()
-	fmt.Println("finished")
-}
-
-func Test_Fsjdkf(t *testing.T) {
-	for i := 0; i < 16; i++ {
-		keys := hashesToCompute(i)
-		fmt.Printf("%d: %v\n", i, keys)
 	}
 }

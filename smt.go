@@ -1005,36 +1005,3 @@ func (tree *BASSparseMerkleTree) recompute(node *TreeNode, journals *journal) {
 		}
 	}
 }
-
-func hashesToCompute(nibble int) (keys []int) {
-	index := 0
-	for j := 0; j < 3; j++ {
-		inc := nibble / (1 << (3 - j))
-		keys = append(keys, index+inc)
-		index += 1 << (j + 1)
-	}
-	return
-}
-
-func newSet() *set {
-	return &set{container: make(map[int]struct{})}
-}
-
-type set struct {
-	container map[int]struct{}
-}
-
-func (s *set) add(v int) {
-	s.container[v] = struct{}{}
-}
-
-func (s *set) addMulti(values ...int) {
-	for _, v := range values {
-		s.add(v)
-	}
-}
-
-func (s *set) has(v int) bool {
-	_, ok := s.container[v]
-	return ok
-}

@@ -6,12 +6,8 @@
 package bsmt
 
 import (
-	"bytes"
-	"fmt"
 	"github.com/panjf2000/ants/v2"
-	"runtime"
 	"sort"
-	"strconv"
 	"sync"
 )
 
@@ -97,12 +93,6 @@ func (node *TreeNode) newVersion(version *VersionInfo) {
 		return
 	}
 	node.Versions = append(node.Versions, version)
-}
-
-func (node *TreeNode) SetChildrenOnly(child *TreeNode, nibble int, version Version) {
-	node.mu.Lock()
-	defer node.mu.Unlock()
-	node.Children[nibble] = child
 }
 
 func (node *TreeNode) SetChildren(child *TreeNode, nibble int, version Version) {
@@ -363,8 +353,6 @@ func (node *TreeNode) computeInternal(nibbles map[uint64]struct{}, pool *ants.Po
 	})
 }
 
-type nibbles []uint64
-
 type VersionInfo struct {
 	Ver  Version
 	Hash []byte
@@ -476,21 +464,16 @@ func (node *TreeNode) recompute(child *TreeNode, journals *journal, version Vers
 		if setBefore {
 			return false
 		}
+		siblingNibble := prefix + nibble ^ 1
+		siblingHash := node.getInternal(siblingNibble)
+		if siblingHash == nil {
+			return false
+		}
 		switch nibble % 2 {
 		case 0:
-			siblingNibble := prefix + nibble ^ 1
-			siblingHash := node.getInternal(siblingNibble, version)
-			if siblingHash == nil {
-				return false
-			}
 			left = hash
 			right = siblingHash
 		case 1:
-			siblingNibble := prefix + nibble ^ 1
-			siblingHash := node.getInternal(siblingNibble, version)
-			if siblingHash == nil {
-				return false
-			}
 			right = hash
 			left = siblingHash
 		}
@@ -516,7 +499,7 @@ func (node *TreeNode) setInternal(idx int, left []byte, right []byte, version Ve
 	return hash, false
 }
 
-func (node *TreeNode) getInternal(idx int, version Version) []byte {
+func (node *TreeNode) getInternal(idx int) []byte {
 	node.internalMu[idx].RLock()
 	defer node.internalMu[idx].RUnlock()
 	return node.Internals[idx]
@@ -526,22 +509,6 @@ func (node *TreeNode) getChild(nibble int) *TreeNode {
 	node.mu.RLock()
 	defer node.mu.RUnlock()
 	return node.Children[nibble]
-}
-
-func (node *TreeNode) newVersionWithLock(version *VersionInfo) {
-	node.mu.Lock()
-	defer node.mu.Unlock()
-	l := len(node.Versions)
-	if l == 0 || version.Ver > node.Versions[l-1].Ver {
-		fmt.Printf("%d, setting root: %d-%d\n", getGID(), node.depth, node.path)
-		node.Versions = append(node.Versions, version)
-	}
-}
-
-type internalNode struct {
-	mu     sync.RWMutex
-	ver    Version
-	nibble int
 }
 
 var leafInternalMap = map[int][]int{
@@ -561,13 +528,4 @@ var leafInternalMap = map[int][]int{
 	13: {1, 5, 12},
 	14: {1, 5, 13},
 	15: {1, 5, 13},
-}
-
-func getGID() uint64 {
-	b := make([]byte, 64)
-	b = b[:runtime.Stack(b, false)]
-	b = bytes.TrimPrefix(b, []byte("goroutine "))
-	b = b[:bytes.IndexByte(b, ' ')]
-	n, _ := strconv.ParseUint(string(b), 10, 64)
-	return n
 }

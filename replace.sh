@@ -15,3 +15,6 @@ go mod edit -replace github.com/bnb-chain/zkbnb-smt=/Users/damon/GolandProjects/
 go mod tidy
 sed -i -e "s/MultiSet/MultiUpdate/g" ${DEPLOY_PATH}/zkbnb/core/statedb/statedb.go
 pm2 restart committer
+
+
+

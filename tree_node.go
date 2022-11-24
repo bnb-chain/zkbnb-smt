@@ -6,9 +6,13 @@
 package bsmt
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"github.com/panjf2000/ants/v2"
+	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 )
 
@@ -193,6 +197,8 @@ func (node *TreeNode) Copy() *TreeNode {
 }
 
 func (node *TreeNode) mark(nibble int) {
+	//node.mu.Lock()
+	//defer node.mu.Unlock()
 	for _, i := range leafInternalMap[nibble] {
 		node.Internals[i] = nil
 	}
@@ -442,11 +448,12 @@ func (node *TreeNode) childrenHash(nibble uint64) (left, right []byte) {
 }
 
 // recompute inner node
-func (node *TreeNode) recompute(child *TreeNode, internalPath *set, journals *journal, version Version) {
-	node.Children[child.path&0xf] = child
+func (node *TreeNode) recompute(child *TreeNode, journals *journal, version Version) {
+	//node.Children[child.path&0xf] = child
 	//node.mu.Lock()
 	//defer node.mu.Unlock()
 	// for all children, recompute hash in parallel
+	fmt.Printf("%d, calc parent: %d-%d, child: %d-%d\n", getGID(), node.depth, node.path, child.depth, child.path)
 
 	wg := sync.WaitGroup{}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -464,26 +471,47 @@ func (node *TreeNode) recompute(child *TreeNode, internalPath *set, journals *jo
 				case <-ctx.Done():
 					return
 				default:
-					child := node.Children[nibble]
+					child := node.getChild(nibble)
+					//sibling := node.Children[nibble^1]
 					left, right := node.nilChildHash, node.nilChildHash
 					// if sibling haven't finished yet,quit; sibling will be charge for computing
 					switch nibble % 2 {
 					case 0:
-						left = child.root()
+						left = child.Root()
 						if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
 							if sibling.latestVersionWithLock() < version {
+								fmt.Printf("sibling %d-%d is not latest, return\n", sibling.depth, sibling.path)
 								return
 							}
-							right = sibling.root()
+							right = sibling.Root()
 						}
+						//if sibling == nil {
+						//	return
+						//} else {
+						//	if sibling.latestVersionWithLock() < version {
+						//		return
+						//	} else {
+						//		right = sibling.root()
+						//	}
+						//}
 					case 1:
-						right = child.root()
+						right = child.Root()
 						if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
 							if sibling.latestVersionWithLock() < version {
+								fmt.Printf("sibling %d-%d is not latest, return\n", sibling.depth, sibling.path)
 								return
 							}
-							left = sibling.root()
+							left = sibling.Root()
 						}
+						//if sibling == nil {
+						//	return
+						//} else {
+						//	if sibling.latestVersionWithLock() < version {
+						//		return
+						//	} else {
+						//		left = sibling.root()
+						//	}
+						//}
 					}
 					prefix := 6
 					for i := 4; i >= 1; i >>= 1 {
@@ -491,32 +519,18 @@ func (node *TreeNode) recompute(child *TreeNode, internalPath *set, journals *jo
 						hash := node.setInternal(prefix+nibble, left, right, version)
 						//node.Internals[prefix+nibble] = node.hasher.Hash(left, right)
 						siblingNibble := prefix + nibble ^ 1
+						siblingHash := node.getInternal(siblingNibble, version)
+						if siblingHash == nil {
+							fmt.Printf("%d Internal sibling %d is nil, node %d-%d return\n", getGID(), siblingNibble, node.depth, node.path)
+							return
+						}
 						switch nibble % 2 {
 						case 0:
 							left = hash
-							if node.Internals[siblingNibble] == nil {
-								return
-							} else {
-								right = node.Internals[siblingNibble]
-							}
-							//if internalPath.has(siblingNibble) {
-							//	if right = node.getInternal(siblingNibble, version); right == nil {
-							//		return
-							//	}
-							//}
-
+							right = siblingHash
 						case 1:
 							right = hash
-							if node.Internals[siblingNibble] == nil {
-								return
-							} else {
-								left = node.Internals[siblingNibble]
-							}
-							//if internalPath.has(siblingNibble) {
-							//	if left = node.getInternal(siblingNibble, version); left == nil {
-							//		return
-							//	}
-							//}
+							left = siblingHash
 						}
 						prefix = prefix - i
 					}
@@ -525,7 +539,12 @@ func (node *TreeNode) recompute(child *TreeNode, internalPath *set, journals *jo
 						Ver:  version,
 						Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
 					})
+					//node.newVersion(&VersionInfo{
+					//	Ver:  version,
+					//	Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
+					//})
 					cancel()
+					return
 
 					//for depth != 0 {
 					//	if leaf {
@@ -607,10 +626,23 @@ func (node *TreeNode) setInternal(idx int, left []byte, right []byte, version Ve
 func (node *TreeNode) getInternal(idx int, version Version) []byte {
 	node.internalMu[idx].RLock()
 	defer node.internalMu[idx].RUnlock()
-	if node.internalVer[idx] < version {
-		return nil
-	}
 	return node.Internals[idx]
+}
+
+func (node *TreeNode) getChild(nibble int) *TreeNode {
+	node.mu.RLock()
+	defer node.mu.RUnlock()
+	return node.Children[nibble]
+}
+
+func (node *TreeNode) newVersionWithLock(version *VersionInfo) {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+	l := len(node.Versions)
+	if l == 0 || version.Ver > node.Versions[l-1].Ver {
+		fmt.Printf("%d, setting root: %d-%d\n", getGID(), node.depth, node.path)
+		node.Versions = append(node.Versions, version)
+	}
 }
 
 type internalNode struct {
@@ -636,4 +668,13 @@ var leafInternalMap = map[int][]int{
 	13: {1, 5, 12},
 	14: {1, 5, 13},
 	15: {1, 5, 13},
+}
+
+func getGID() uint64 {
+	b := make([]byte, 64)
+	b = b[:runtime.Stack(b, false)]
+	b = bytes.TrimPrefix(b, []byte("goroutine "))
+	b = b[:bytes.IndexByte(b, ' ')]
+	n, _ := strconv.ParseUint(string(b), 10, 64)
+	return n
 }

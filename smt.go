@@ -172,6 +172,22 @@ func (j *journal) iterate(callback func(key journalKey, val *TreeNode) error) er
 	return nil
 }
 
+func (j *journal) setIfNotExist(jk journalKey, target *TreeNode) *TreeNode {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	node, exist := j.data[jk]
+	if !exist {
+		j.data[jk] = target.Copy()
+		if p, e := j.data[journalKey{depth: target.depth - 4, path: target.path >> 4}]; e {
+			p.Children[target.path&0xf] = j.data[jk]
+		}
+		return j.data[jk]
+	} else {
+		return node
+	}
+}
+
 // status for GC.
 // In the Commit() stage, the version and releasable size will be recorded,
 // the size of the current version tree exceeds the threshold and starts to trigger GC.
@@ -519,27 +535,27 @@ func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
 	}
 	// also check len(items) not exceed 2^maxDepth - 1
 	// also check no duplicated keys
-	internalPath := make(map[journalKey]*set)
+	//internalPath := make(map[journalKey]*set)
 	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func(it []Item) {
-		defer wg.Done()
-		for k := range it {
-			key := journalKey{depth: tree.maxDepth, path: uint64(k)}
-			if internalPath[key] == nil {
-				internalPath[key] = newSet()
-			}
-			internalPath[key].addMulti(leafInternalMap[k&0xf]...)
-		}
-	}(items)
+	//wg.Add(1)
+	//go func(it []Item) {
+	//	defer wg.Done()
+	//	for k := range it {
+	//		key := journalKey{depth: tree.maxDepth, path: uint64(k)}
+	//		if internalPath[key] == nil {
+	//			internalPath[key] = newSet()
+	//		}
+	//		internalPath[key].addMulti(leafInternalMap[k&0xf]...)
+	//	}
+	//}(items)
 	tmpJournal := newJournal()
 	leavesJournal := newJournal()
 	// should we initialize all intermediate nodes when New SMT? so we can skip this step
 
-	wg.Add(size)
 	maxKey := uint64(1 << tree.maxDepth)
 	errs := make(chan error, size)
 	for _, it := range items {
+		wg.Add(1)
 		i := it
 		err := tree.goroutinePool.Submit(func() {
 			defer wg.Done()
@@ -572,10 +588,14 @@ func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
 	//	fmt.Printf("%d - %d: %v\n", k.depth, k.path, ints)
 	//}
 	tmpJournal.iterate(func(k journalKey, v *TreeNode) error {
+		var idx []int
 		for i, b := range v.Internals {
 			if v.depth != tree.maxDepth && b == nil {
-				fmt.Printf("%d - %d: %d\n", v.depth, v.path, i)
+				idx = append(idx, i)
 			}
+		}
+		if len(idx) > 0 {
+			fmt.Printf("nil internal: %d - %d: %v\n", v.depth, v.path, idx)
 		}
 		return nil
 	})
@@ -585,7 +605,7 @@ func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
 	err := leavesJournal.iterate(func(k journalKey, v *TreeNode) error {
 		err := tree.goroutinePool.Submit(func() {
 			defer wg.Done()
-			tree.recompute(v, internalPath[k], tmpJournal)
+			tree.recompute(v, tmpJournal)
 		})
 		if err != nil {
 			return err
@@ -633,12 +653,25 @@ func (tree *BASSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, i
 
 		// skip existed node
 		jk := journalKey{targetNode.depth, targetNode.path}
-		cp, exist := tmpJournal.get(jk)
-		if !exist {
-			cp = targetNode.Copy()
-			tmpJournal.set(jk, cp)
-		}
+
+		cp := tmpJournal.setIfNotExist(jk, targetNode)
+		//cp, exist := tmpJournal.get(jk)
+		//if !exist {
+		//	cp = targetNode.Copy()
+		//	tmpJournal.set(jk, cp)
+		//	if p, e := tmpJournal.get(journalKey{depth: targetNode.depth - 4, path: targetNode.path >> 4}); e {
+		//		p.Children[targetNode.path&0xf] = cp
+		//	}
+		//}
 		cp.mark(int(nibble))
+
+		//if _, exist := tmpJournal.get(journalKey{targetNode.depth, targetNode.path}); !exist {
+		//	node := targetNode.Copy()
+		//	if p, e := tmpJournal.get(journalKey{depth: targetNode.depth - 4, path: targetNode.path >> 4}); e {
+		//		p.Children[targetNode.path&0xf] = node
+		//	}
+		//	tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, node)
+		//}
 
 		// create a new treeNode in targetNode
 		if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {
@@ -651,6 +684,9 @@ func (tree *BASSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, i
 	// update hash of leaf node
 	targetNode.Set(val, newVersion)
 	tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode)
+	if p, e := tmpJournal.get(journalKey{depth: targetNode.depth - 4, path: targetNode.path >> 4}); e {
+		p.Children[targetNode.path&0xf] = targetNode
+	}
 	return targetNode, nil
 }
 
@@ -1000,7 +1036,7 @@ func (tree *BASSparseMerkleTree) collectGCMetrics() {
 	tree.metrics.GCVersions(gcVersions)
 }
 
-func (tree *BASSparseMerkleTree) recompute(node *TreeNode, internalPath *set, journals *journal) {
+func (tree *BASSparseMerkleTree) recompute(node *TreeNode, journals *journal) {
 	version := node.latestVersion()
 	child := node
 	for child != nil {
@@ -1010,8 +1046,12 @@ func (tree *BASSparseMerkleTree) recompute(node *TreeNode, internalPath *set, jo
 			return
 		}
 		// we got child hash now, move to compute parent's hash
-		parent.recompute(child, internalPath, journals, version)
-		child = parent
+		parent.recompute(child, journals, version)
+		if child.depth == 0 {
+			return
+		} else {
+			child = parent
+		}
 	}
 }
 

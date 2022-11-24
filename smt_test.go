@@ -876,7 +876,7 @@ func Test_SingleMultiUpdate(t *testing.T) {
 	memEnv := prepareEnv(t)[0]
 	items := []Item{
 		//{Key: 0, Val: memEnv.hasher.Hash([]byte("val0"))},
-		//{Key: 4, Val: memEnv.hasher.Hash([]byte("val1"))},
+		//{Key: 1, Val: memEnv.hasher.Hash([]byte("val1"))},
 		{1, memEnv.hasher.Hash([]byte("val1"))},
 		{2, memEnv.hasher.Hash([]byte("val2"))},
 		{3, memEnv.hasher.Hash([]byte("val3"))},
@@ -892,22 +892,22 @@ func Test_SingleMultiUpdate(t *testing.T) {
 		{13, memEnv.hasher.Hash([]byte("val13"))},
 		{14, memEnv.hasher.Hash([]byte("val14"))},
 		{200, memEnv.hasher.Hash([]byte("val200"))},
-		{20, memEnv.hasher.Hash([]byte("val20"))},
-		{21, memEnv.hasher.Hash([]byte("val21"))},
-		{22, memEnv.hasher.Hash([]byte("val22"))},
-		{23, memEnv.hasher.Hash([]byte("val23"))},
-		{24, memEnv.hasher.Hash([]byte("val24"))},
-		{26, memEnv.hasher.Hash([]byte("val26"))},
-		{37, memEnv.hasher.Hash([]byte("val37"))},
-		{255, memEnv.hasher.Hash([]byte("val255"))},
-		{254, memEnv.hasher.Hash([]byte("val254"))},
-		{253, memEnv.hasher.Hash([]byte("val253"))},
-		{252, memEnv.hasher.Hash([]byte("val252"))},
-		{251, memEnv.hasher.Hash([]byte("val251"))},
-		{250, memEnv.hasher.Hash([]byte("val250"))},
-		{249, memEnv.hasher.Hash([]byte("val249"))},
-		{248, memEnv.hasher.Hash([]byte("val248"))},
-		{247, memEnv.hasher.Hash([]byte("val247"))},
+		//{20, memEnv.hasher.Hash([]byte("val20"))},
+		//{21, memEnv.hasher.Hash([]byte("val21"))},
+		//{22, memEnv.hasher.Hash([]byte("val22"))},
+		//{23, memEnv.hasher.Hash([]byte("val23"))},
+		//{24, memEnv.hasher.Hash([]byte("val24"))},
+		//{26, memEnv.hasher.Hash([]byte("val26"))},
+		//{37, memEnv.hasher.Hash([]byte("val37"))},
+		//{255, memEnv.hasher.Hash([]byte("val255"))},
+		//{254, memEnv.hasher.Hash([]byte("val254"))},
+		//{253, memEnv.hasher.Hash([]byte("val253"))},
+		//{252, memEnv.hasher.Hash([]byte("val252"))},
+		//{251, memEnv.hasher.Hash([]byte("val251"))},
+		//{250, memEnv.hasher.Hash([]byte("val250"))},
+		//{249, memEnv.hasher.Hash([]byte("val249"))},
+		//{248, memEnv.hasher.Hash([]byte("val248"))},
+		//{247, memEnv.hasher.Hash([]byte("val247"))},
 	}
 	testMultiUpdate(t, memEnv, items, 8)
 }
@@ -1006,6 +1006,28 @@ func testSet(t *testing.T, env testEnv, depth uint8) {
 
 func verifyItems(t *testing.T, smt1 SparseMerkleTree, smt2 SparseMerkleTree, items []Item) {
 	if !bytes.Equal(smt1.Root(), smt2.Root()) {
+		t1 := smt1.(*BASSparseMerkleTree)
+		t2 := smt2.(*BASSparseMerkleTree)
+		for i := 0; i <= int(t1.maxDepth); i += 4 {
+			root1 := t1.root
+			root2 := t2.root
+			for i := 0; i < 16; i++ {
+				child1 := root1.Children[i]
+				child2 := root2.Children[i]
+				if child1 != nil {
+					if !bytes.Equal(child1.root(), child2.root()) {
+						fmt.Printf("hash does not match, keys %d - %d, %x %x\n", child1.depth, child1.path, child1.root(), child2.root())
+						for i := 0; i < 14; i++ {
+							if !bytes.Equal(child1.Internals[i], child2.Internals[i]) {
+								fmt.Printf("Internal not match: idx: %d, %x %x\n", i, child1.Internals[i], child2.Internals[i])
+							}
+						}
+					} else {
+						fmt.Printf("hash matched, keys %d - %d\n", child1.depth, child1.path)
+					}
+				}
+			}
+		}
 		t.Fatalf("root hash does not match, keys %d, %x, %x\n", len(items), smt1.Root(), smt2.Root())
 	}
 

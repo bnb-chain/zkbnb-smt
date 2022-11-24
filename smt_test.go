@@ -867,8 +867,8 @@ func Test_MultiUpdate_Parallel(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	fmt.Printf("average time cost of MultiUpdate: %v\n", d1/time.Duration(total))
-	fmt.Printf("average time cost of MultiSet: %v\n", d2/time.Duration(total))
+	fmt.Printf("average time cost of MultiSet: %v\n", d1/time.Duration(total))
+	fmt.Printf("average time cost of MultiUpdate: %v\n", d2/time.Duration(total))
 }
 
 func Test_SingleMultiUpdate(t *testing.T) {
@@ -925,7 +925,7 @@ func testMultiUpdate(t *testing.T, env testEnv, items []Item, depth uint8) (time
 	smt1 := newSMT(t, env.hasher, db1, depth)
 	smt2 := newSMT(t, env.hasher, db2, depth)
 
-	//smt2 MultiSet
+	//smt2 MultiUpdate
 	starT2 := time.Now()
 	err = smt2.MultiSet(items)
 	if err != nil {
@@ -938,7 +938,7 @@ func testMultiUpdate(t *testing.T, env testEnv, items []Item, depth uint8) (time
 		t.Fatal(err)
 	}
 
-	//smt1 MultiUpdate
+	//smt1 MultiSet
 	starT1 := time.Now()
 	err = smt1.MultiUpdate(items)
 	if err != nil {

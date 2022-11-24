@@ -442,7 +442,7 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 	return nil
 }
 
-func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
+func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -527,7 +527,7 @@ func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
 // 1. generate all intermediate nodes, with lock;
 // 2. set all leaves, without lock;
 // 3. re-compute hash, from leaves to root
-func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
+func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
 	size := len(items)
 	if size == 0 {
 		return nil

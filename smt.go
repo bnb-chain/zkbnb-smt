@@ -8,7 +8,6 @@ package bsmt
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/rlp"
@@ -587,18 +586,18 @@ func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
 	//	}
 	//	fmt.Printf("%d - %d: %v\n", k.depth, k.path, ints)
 	//}
-	tmpJournal.iterate(func(k journalKey, v *TreeNode) error {
-		var idx []int
-		for i, b := range v.Internals {
-			if v.depth != tree.maxDepth && b == nil {
-				idx = append(idx, i)
-			}
-		}
-		if len(idx) > 0 {
-			fmt.Printf("nil internal: %d - %d: %v\n", v.depth, v.path, idx)
-		}
-		return nil
-	})
+	//tmpJournal.iterate(func(k journalKey, v *TreeNode) error {
+	//	var idx []int
+	//	for i, b := range v.Internals {
+	//		if v.depth != tree.maxDepth && b == nil {
+	//			idx = append(idx, i)
+	//		}
+	//	}
+	//	if len(idx) > 0 {
+	//		fmt.Printf("nil internal: %d - %d: %v\n", v.depth, v.path, idx)
+	//	}
+	//	return nil
+	//})
 
 	wg.Add(leavesJournal.len())
 	// For treeNode, the concurrency set to the number of leaf nodes
@@ -653,7 +652,6 @@ func (tree *BASSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, i
 
 		// skip existed node
 		jk := journalKey{targetNode.depth, targetNode.path}
-
 		cp := tmpJournal.setIfNotExist(jk, targetNode)
 		//cp, exist := tmpJournal.get(jk)
 		//if !exist {

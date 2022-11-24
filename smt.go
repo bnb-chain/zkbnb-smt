@@ -1044,7 +1044,9 @@ func (tree *BASSparseMerkleTree) recompute(node *TreeNode, journals *journal) {
 			return
 		}
 		// we got child hash now, move to compute parent's hash
-		parent.recompute(child, journals, version)
+		if !parent.recompute(child, journals, version) {
+			return
+		}
 		if child.depth == 0 {
 			return
 		} else {

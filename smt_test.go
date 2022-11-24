@@ -848,7 +848,7 @@ func Test_MultiUpdate_Parallel(t *testing.T) {
 		{247, memEnv.hasher.Hash([]byte("val247"))},
 		{15, memEnv.hasher.Hash([]byte("val15"))},
 	}
-	total := 100
+	total := 1000
 	wg := sync.WaitGroup{}
 	wg.Add(total)
 	m1 := sync.Mutex{}
@@ -875,8 +875,7 @@ func Test_MultiUpdate_Parallel(t *testing.T) {
 func Test_SingleMultiUpdate(t *testing.T) {
 	memEnv := prepareEnv(t)[0]
 	items := []Item{
-		//{Key: 0, Val: memEnv.hasher.Hash([]byte("val0"))},
-		//{Key: 1, Val: memEnv.hasher.Hash([]byte("val1"))},
+		{Key: 0, Val: memEnv.hasher.Hash([]byte("val0"))},
 		{1, memEnv.hasher.Hash([]byte("val1"))},
 		{2, memEnv.hasher.Hash([]byte("val2"))},
 		{3, memEnv.hasher.Hash([]byte("val3"))},
@@ -913,7 +912,7 @@ func Test_SingleMultiUpdate(t *testing.T) {
 }
 
 func testMultiUpdate(t *testing.T, env testEnv, items []Item, depth uint8) (time.Duration, time.Duration) {
-	t.Logf("test depth %d", depth)
+	//t.Logf("test depth %d", depth)
 	db1, err := env.db()
 	if err != nil {
 		t.Fatal(err)

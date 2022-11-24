@@ -378,6 +378,8 @@ func (node *StorageTreeNode) ToTreeNode(depth uint8, nilHashes *nilHashes, hashe
 		path:         node.Path,
 		depth:        depth,
 		hasher:       hasher,
+		internalMu:   make([]sync.RWMutex, 14),
+		internalVer:  make([]Version, 14),
 	}
 	for i := 0; i < 16; i++ {
 		if node.Children[i] != nil && len(node.Children[i].Versions) > 0 {

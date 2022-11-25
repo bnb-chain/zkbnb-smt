@@ -38,6 +38,60 @@ func storageFullTreeNodeKey(depth uint8, path uint64) []byte {
 
 var _ SparseMerkleTree = (*BASSparseMerkleTree)(nil)
 
+func NewSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, hashes [][]byte, opts ...Option) (SparseMerkleTree, error) {
+	if maxDepth == 0 || maxDepth%4 != 0 {
+		return nil, ErrInvalidDepth
+	}
+
+	smt := &BASSparseMerkleTree{
+		maxDepth:       maxDepth,
+		journal:        newJournal(),
+		nilHashes:      &nilHashes{hashes},
+		hasher:         hasher,
+		batchSizeLimit: 100 * 1024,
+		dbCacheSize:    2048,
+		gcStatus: &gcStatus{
+			threshold: sysMemory.TotalMemory() / 8,
+			segment:   sysMemory.TotalMemory() / 8 / 10,
+		},
+	}
+
+	for _, opt := range opts {
+		opt(smt)
+	}
+
+	if db == nil {
+		smt.db = memory.NewMemoryDB()
+		smt.root = NewTreeNode(0, 0, smt.nilHashes, smt.hasher)
+		return smt, nil
+	}
+
+	smt.db = db
+	err := smt.initFromStorage()
+	if err != nil {
+		return nil, err
+	}
+	smt.lastSaveRoot = smt.root
+
+	if smt.metrics != nil {
+		smt.metrics.GCThreshold(smt.gcStatus.threshold)
+	}
+
+	smt.dbCache, err = lru.New(smt.dbCacheSize)
+	if err != nil {
+		return nil, err
+	}
+
+	if smt.goroutinePool == nil {
+		smt.goroutinePool, err = ants.NewPool(128)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return smt, nil
+}
+
 func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, nilHash []byte,
 	opts ...Option) (SparseMerkleTree, error) {
 

@@ -1055,3 +1055,24 @@ func verifyItems(t *testing.T, smt1 SparseMerkleTree, smt2 SparseMerkleTree, ite
 		}
 	}
 }
+
+func Test_sdf(t *testing.T) {
+	errs := make(chan error, 1)
+	defer close(errs)
+	for i := 0; i < 5; i++ {
+		go func(j int) {
+			time.Sleep(1 * time.Second)
+			if j%2 == 0 {
+				errs <- errors.New(fmt.Sprintf("err %d", j))
+			} else {
+				errs <- nil
+			}
+		}(i)
+	}
+	for i := 0; i < 5; i++ {
+		if err := <-errs; err != nil {
+			fmt.Println(err.Error())
+		}
+	}
+
+}

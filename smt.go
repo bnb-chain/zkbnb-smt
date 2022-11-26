@@ -576,7 +576,7 @@ func (tree *BASSparseMerkleTree) MultiUpdate(items []Item) error {
 	return nil
 }
 
-// MultiUpdate sets k,v pairs in parallel
+// MultiSet sets k,v pairs in parallel
 //
 // 1. generate all intermediate nodes, with lock;
 // 2. set all leaves, without lock;
@@ -588,38 +588,37 @@ func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
 	}
 	// also check len(items) not exceed 2^maxDepth - 1
 	// also check no duplicated keys
-	wg := sync.WaitGroup{}
+
 	tmpJournal := newJournal()
 	leavesJournal := newJournal()
 	// should we initialize all intermediate nodes when New SMT? so we can skip this step
 	maxKey := uint64(1 << tree.maxDepth)
-	errs := make(chan error, size)
-	for _, it := range items {
-		wg.Add(1)
-		i := it
-		err := tree.goroutinePool.Submit(func() {
-			defer wg.Done()
-			if i.Key >= maxKey {
-				errs <- ErrInvalidKey
-			}
-			leaf, err := tree.setIntermediateAndLeaves(tmpJournal, i)
-			if err != nil {
+	errs := make(chan error, 1)
+	defer close(errs)
+	for _, item := range items {
+		if item.Key >= maxKey {
+			return ErrInvalidKey
+		}
+		err := func(it Item) error {
+			return tree.goroutinePool.Submit(func() {
+				leaf, err := tree.setIntermediateAndLeaves(tmpJournal, it)
+				if _, exist := leavesJournal.get(journalKey{leaf.depth, leaf.path}); !exist {
+					leavesJournal.set(journalKey{leaf.depth, leaf.path}, leaf)
+				}
 				errs <- err
-			}
-			if _, exist := leavesJournal.get(journalKey{leaf.depth, leaf.path}); !exist {
-				leavesJournal.set(journalKey{leaf.depth, leaf.path}, leaf)
-			}
-		})
+			})
+		}(item)
 		if err != nil {
 			return ErrUnexpected
 		}
 	}
-	wg.Wait()
-	close(errs)
-	if err := <-errs; err != nil {
-		return err
+	for i := 0; i < size; i++ {
+		if err := <-errs; err != nil {
+			return err
+		}
 	}
 
+	wg := sync.WaitGroup{}
 	wg.Add(leavesJournal.len())
 	// For treeNode, the concurrency set to the number of leaf nodes
 	err := leavesJournal.iterate(func(k journalKey, v *TreeNode) error {

@@ -738,7 +738,7 @@ func Test_MultiSet_Parallel(t *testing.T) {
 	for i := 0; i < total; i++ {
 		go func() {
 			defer wg.Done()
-			t1, t2 := testMultiSet(t, memEnv, items, 40)
+			t1, t2 := testMultiSet(t, memEnv, items, 8)
 			m1.Lock()
 			d1 += t1
 			m1.Unlock()

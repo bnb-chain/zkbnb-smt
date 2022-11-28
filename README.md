@@ -40,7 +40,7 @@ func main() {
 	nilHash := hasher.Hash([]byte("nilHash"))
 	maxDepth := uint8(8)
 
-	smt, err := bsmt.NewBASSparseMerkleTree(hasher, db, maxDepth, nilHash)
+	smt, err := bsmt.NewBNBSparseMerkleTree(hasher, db, maxDepth, nilHash)
 	if err != nil {
 		fmt.Println(err)
 		return

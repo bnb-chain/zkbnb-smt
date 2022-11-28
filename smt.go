@@ -83,7 +83,7 @@ func NewSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, has
 	}
 
 	if smt.goroutinePool == nil {
-		smt.goroutinePool, err = ants.NewPool(1024)
+		smt.goroutinePool, err = ants.NewPool(128)
 		if err != nil {
 			return nil, err
 		}
@@ -104,8 +104,8 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 		journal:        newJournal(),
 		nilHashes:      constructNilHashes(maxDepth, nilHash, hasher),
 		hasher:         hasher,
-		batchSizeLimit: 100000 * 1024,
-		dbCacheSize:    100 * 1024 * 1024,
+		batchSizeLimit: 100 * 1024,
+		dbCacheSize:    2048,
 		gcStatus: &gcStatus{
 			threshold: sysMemory.TotalMemory() / 8,
 			segment:   sysMemory.TotalMemory() / 8 / 10,
@@ -139,7 +139,7 @@ func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, 
 	}
 
 	if smt.goroutinePool == nil {
-		smt.goroutinePool, err = ants.NewPool(1024)
+		smt.goroutinePool, err = ants.NewPool(128)
 		if err != nil {
 			return nil, err
 		}

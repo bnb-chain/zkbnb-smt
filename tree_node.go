@@ -343,6 +343,8 @@ func (node *StorageTreeNode) ToTreeNode(depth uint8, nilHashes *nilHashes, hashe
 				nilChildHash: nilHashes.Get(depth + 8),
 				hasher:       hasher,
 				temporary:    true,
+				//depth:        depth + 4,
+				//path:         16*treeNode.path + uint64(i),
 			}
 		}
 	}
@@ -379,6 +381,8 @@ func (node *TreeNode) recompute(child *TreeNode, journals *journal, version Vers
 				return false
 			}
 			right = sibling.root()
+		} else if node.Children[nibble^1] != nil {
+			right = node.Children[nibble^1].Root()
 		}
 	case 1:
 		right = child.root()
@@ -387,6 +391,8 @@ func (node *TreeNode) recompute(child *TreeNode, journals *journal, version Vers
 				return false
 			}
 			left = sibling.root()
+		} else if node.Children[nibble^1] != nil {
+			left = node.Children[nibble^1].Root()
 		}
 	}
 	prefix := 6

@@ -38,6 +38,60 @@ func storageFullTreeNodeKey(depth uint8, path uint64) []byte {
 
 var _ SparseMerkleTree = (*BASSparseMerkleTree)(nil)
 
+func NewSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, hashes [][]byte, opts ...Option) (SparseMerkleTree, error) {
+	if maxDepth == 0 || maxDepth%4 != 0 {
+		return nil, ErrInvalidDepth
+	}
+
+	smt := &BASSparseMerkleTree{
+		maxDepth:       maxDepth,
+		journal:        newJournal(),
+		nilHashes:      &nilHashes{hashes},
+		hasher:         hasher,
+		batchSizeLimit: 100000 * 1024,
+		dbCacheSize:    100 * 1024 * 1024,
+		gcStatus: &gcStatus{
+			threshold: sysMemory.TotalMemory() / 8,
+			segment:   sysMemory.TotalMemory() / 8 / 10,
+		},
+	}
+
+	for _, opt := range opts {
+		opt(smt)
+	}
+
+	if db == nil {
+		smt.db = memory.NewMemoryDB()
+		smt.root = NewTreeNode(0, 0, smt.nilHashes, smt.hasher)
+		return smt, nil
+	}
+
+	smt.db = db
+	err := smt.initFromStorage()
+	if err != nil {
+		return nil, err
+	}
+	smt.lastSaveRoot = smt.root
+
+	if smt.metrics != nil {
+		smt.metrics.GCThreshold(smt.gcStatus.threshold)
+	}
+
+	smt.dbCache, err = lru.New(smt.dbCacheSize)
+	if err != nil {
+		return nil, err
+	}
+
+	if smt.goroutinePool == nil {
+		smt.goroutinePool, err = ants.NewPool(128)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return smt, nil
+}
+
 func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, nilHash []byte,
 	opts ...Option) (SparseMerkleTree, error) {
 
@@ -169,6 +223,22 @@ func (j *journal) iterate(callback func(key journalKey, val *TreeNode) error) er
 		}
 	}
 	return nil
+}
+
+func (j *journal) setIfNotExist(jk journalKey, target *TreeNode) *TreeNode {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	node, exist := j.data[jk]
+	if !exist {
+		j.data[jk] = target.Copy()
+		if p, e := j.data[journalKey{depth: target.depth - 4, path: target.path >> 4}]; e {
+			p.Children[target.path&0xf] = j.data[jk]
+		}
+		return j.data[jk]
+	} else {
+		return node
+	}
 }
 
 // status for GC.
@@ -430,7 +500,7 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 //
 // 1. generate all intermediate nodes, with lock;
 // 2. set all leaves, without lock;
-// 3. re-compute hash, care about dependency routes.
+// 3. re-compute hash, from leaves to root
 func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
 	size := len(items)
 	if size == 0 {
@@ -438,38 +508,37 @@ func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
 	}
 	// also check len(items) not exceed 2^maxDepth - 1
 	// also check no duplicated keys
+
 	tmpJournal := newJournal()
 	leavesJournal := newJournal()
 	// should we initialize all intermediate nodes when New SMT? so we can skip this step
-	wg := sync.WaitGroup{}
-	wg.Add(size)
 	maxKey := uint64(1 << tree.maxDepth)
-	errs := make(chan error, size)
-	for _, it := range items {
-		i := it
-		err := tree.goroutinePool.Submit(func() {
-			defer wg.Done()
-			if i.Key >= maxKey {
-				errs <- ErrInvalidKey
-			}
-			leaf, err := tree.setIntermediateAndLeaves(tmpJournal, i)
-			if err != nil {
+	errs := make(chan error, 1)
+	defer close(errs)
+	for _, item := range items {
+		if item.Key >= maxKey {
+			return ErrInvalidKey
+		}
+		err := func(it Item) error {
+			return tree.goroutinePool.Submit(func() {
+				leaf, err := tree.setIntermediateAndLeaves(tmpJournal, it)
+				if _, exist := leavesJournal.get(journalKey{leaf.depth, leaf.path}); !exist {
+					leavesJournal.set(journalKey{leaf.depth, leaf.path}, leaf)
+				}
 				errs <- err
-			}
-			if _, exist := leavesJournal.get(journalKey{leaf.depth, leaf.path}); !exist {
-				leavesJournal.set(journalKey{leaf.depth, leaf.path}, leaf)
-			}
-		})
+			})
+		}(item)
 		if err != nil {
 			return ErrUnexpected
 		}
 	}
-	wg.Wait()
-	close(errs)
-	if err := <-errs; err != nil {
-		return err
+	for i := 0; i < size; i++ {
+		if err := <-errs; err != nil {
+			return err
+		}
 	}
 
+	wg := sync.WaitGroup{}
 	wg.Add(leavesJournal.len())
 	// For treeNode, the concurrency set to the number of leaf nodes
 	err := leavesJournal.iterate(func(k journalKey, v *TreeNode) error {
@@ -522,9 +591,9 @@ func (tree *BASSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, i
 		nibble := path & 0x000000000000000f
 
 		// skip existed node
-		if _, exist := tmpJournal.get(journalKey{targetNode.depth, targetNode.path}); !exist {
-			tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode.Copy())
-		}
+		jk := journalKey{targetNode.depth, targetNode.path}
+		cp := tmpJournal.setIfNotExist(jk, targetNode)
+		cp.mark(int(nibble))
 
 		// create a new treeNode in targetNode
 		if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {
@@ -537,6 +606,9 @@ func (tree *BASSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, i
 	// update hash of leaf node
 	targetNode.Set(val, newVersion)
 	tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode)
+	if p, e := tmpJournal.get(journalKey{depth: targetNode.depth - 4, path: targetNode.path >> 4}); e {
+		p.Children[targetNode.path&0xf] = targetNode
+	}
 	return targetNode, nil
 }
 
@@ -895,8 +967,14 @@ func (tree *BASSparseMerkleTree) recompute(node *TreeNode, journals *journal) {
 		if !exist {
 			return
 		}
-		// we got root hash now, move to compute parent's hash
-		parent.recompute(child, journals, version)
-		child = parent
+		// we got child hash now, move to compute parent's hash
+		if !parent.recompute(child, journals, version) {
+			return
+		}
+		if child.depth == 0 {
+			return
+		} else {
+			child = parent
+		}
 	}
 }

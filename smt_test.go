@@ -727,9 +727,8 @@ func Test_MultiSet_Parallel(t *testing.T) {
 		{249, memEnv.hasher.Hash([]byte("val249"))},
 		{248, memEnv.hasher.Hash([]byte("val248"))},
 		{247, memEnv.hasher.Hash([]byte("val247"))},
-		{15, memEnv.hasher.Hash([]byte("val15"))},
 	}
-	total := 100
+	total := 1000
 	wg := sync.WaitGroup{}
 	wg.Add(total)
 	m1 := sync.Mutex{}
@@ -756,8 +755,7 @@ func Test_MultiSet_Parallel(t *testing.T) {
 func Test_SingleMultiSet(t *testing.T) {
 	memEnv := prepareEnv(t)[0]
 	items := []Item{
-		//{Key: 0, Val: memEnv.hasher.Hash([]byte("val0"))},
-		//{Key: 1, Val: memEnv.hasher.Hash([]byte("val1"))},
+		{Key: 0, Val: memEnv.hasher.Hash([]byte("val0"))},
 		{1, memEnv.hasher.Hash([]byte("val1"))},
 		{2, memEnv.hasher.Hash([]byte("val2"))},
 		{3, memEnv.hasher.Hash([]byte("val3"))},
@@ -801,7 +799,7 @@ func Test_BASSparseMerkleTree_Set(t *testing.T) {
 }
 
 func testMultiSet(t *testing.T, env testEnv, items []Item, depth uint8) (time.Duration, time.Duration) {
-	t.Logf("test depth %d", depth)
+	//t.Logf("test depth %d", depth)
 	db1, err := env.db()
 	if err != nil {
 		t.Fatal(err)

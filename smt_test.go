@@ -83,7 +83,7 @@ func testProof(t *testing.T, hasher *Hasher, dbInitializer func() (database.Tree
 	}
 	defer db.Close()
 
-	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
+	smt, err := NewBNBSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func testProof(t *testing.T, hasher *Hasher, dbInitializer func() (database.Tree
 	}
 
 	// restore tree from db
-	smt2, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
+	smt2, err := NewBNBSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func testProof(t *testing.T, hasher *Hasher, dbInitializer func() (database.Tree
 	}
 }
 
-func Test_BASSparseMerkleTree_Proof(t *testing.T) {
+func Test_BNBSparseMerkleTree_Proof(t *testing.T) {
 	for _, env := range prepareEnv() {
 		t.Logf("test [%s]", env.tag)
 		testProof(t, env.hasher, env.db)
@@ -284,7 +284,7 @@ func testRollback(t *testing.T, hasher *Hasher, dbInitializer func() (database.T
 	}
 	defer db.Close()
 
-	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
+	smt, err := NewBNBSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func testRollback(t *testing.T, hasher *Hasher, dbInitializer func() (database.T
 	}
 
 	// restore tree from db
-	smt2, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
+	smt2, err := NewBNBSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +361,7 @@ func testRollback(t *testing.T, hasher *Hasher, dbInitializer func() (database.T
 	}
 }
 
-func Test_BASSparseMerkleTree_Rollback(t *testing.T) {
+func Test_BNBSparseMerkleTree_Rollback(t *testing.T) {
 	for _, env := range prepareEnv() {
 		t.Logf("test [%s]", env.tag)
 		testRollback(t, env.hasher, env.db)
@@ -380,11 +380,11 @@ func testRollbackRecovery(t *testing.T, hasher *Hasher, dbInitializer func() (da
 	}
 	defer db2.Close()
 
-	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
+	smt, err := NewBNBSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
-	smt2, err := NewBASSparseMerkleTree(hasher, db2, 8, nilHash)
+	smt2, err := NewBNBSparseMerkleTree(hasher, db2, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,7 +440,7 @@ func testRollbackRecovery(t *testing.T, hasher *Hasher, dbInitializer func() (da
 	}
 
 	// restore tree from db
-	smt2, err = NewBASSparseMerkleTree(hasher, db2, 8, nilHash)
+	smt2, err = NewBNBSparseMerkleTree(hasher, db2, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +472,7 @@ func testRollbackRecovery(t *testing.T, hasher *Hasher, dbInitializer func() (da
 	}
 }
 
-func Test_BASSparseMerkleTree_RollbackAfterRecovery(t *testing.T) {
+func Test_BNBSparseMerkleTree_RollbackAfterRecovery(t *testing.T) {
 	for _, env := range prepareEnv() {
 		t.Logf("test [%s]", env.tag)
 		testRollbackRecovery(t, env.hasher, env.db)
@@ -486,7 +486,7 @@ func testReset(t *testing.T, hasher *Hasher, dbInitializer func() (database.Tree
 	}
 	defer db.Close()
 
-	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash)
+	smt, err := NewBNBSparseMerkleTree(hasher, db, 8, nilHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,7 +519,7 @@ func testReset(t *testing.T, hasher *Hasher, dbInitializer func() (database.Tree
 	smt.Reset()
 }
 
-func Test_BASSparseMerkleTree_Reset(t *testing.T) {
+func Test_BNBSparseMerkleTree_Reset(t *testing.T) {
 	for _, env := range prepareEnv() {
 		t.Logf("test [%s]", env.tag)
 		testReset(t, env.hasher, env.db)
@@ -533,7 +533,7 @@ func testGC(t *testing.T, hasher *Hasher, dbInitializer func() (database.TreeDB,
 	}
 	defer db.Close()
 
-	smt, err := NewBASSparseMerkleTree(hasher, db, 8, nilHash,
+	smt, err := NewBNBSparseMerkleTree(hasher, db, 8, nilHash,
 		GCThreshold(1024*10))
 	if err != nil {
 		t.Fatal(err)
@@ -597,14 +597,14 @@ func testGC(t *testing.T, hasher *Hasher, dbInitializer func() (database.TreeDB,
 	}
 }
 
-func Test_BASSparseMerkleTree_GC(t *testing.T) {
+func Test_BNBSparseMerkleTree_GC(t *testing.T) {
 	for _, env := range prepareEnv() {
 		t.Logf("test [%s]", env.tag)
 		testGC(t, env.hasher, env.db)
 	}
 }
 
-func Test_BASSparseMerkleTree_MultiSet(t *testing.T) {
+func Test_BNBSparseMerkleTree_MultiSet(t *testing.T) {
 	rawKvs := map[uint64]string{
 		1:   "val1",
 		2:   "val2",
@@ -725,7 +725,7 @@ func Test_SingleMultiSet(t *testing.T) {
 	testMultiSet(t, memEnv, items, 8)
 }
 
-func Test_BASSparseMerkleTree_Set(t *testing.T) {
+func Test_BNBSparseMerkleTree_Set(t *testing.T) {
 	for _, env := range prepareEnv() {
 		t.Logf("test [%s]", env.tag)
 		testSet(t, env, 8)
@@ -780,7 +780,7 @@ func testMultiSet(t *testing.T, env testEnv, items []Item, depth uint8) (time.Du
 }
 
 func newSMT(t *testing.T, hasher *Hasher, db database.TreeDB, maxDepth uint8) SparseMerkleTree {
-	smt, err := NewBASSparseMerkleTree(hasher, db, maxDepth, nilHash,
+	smt, err := NewBNBSparseMerkleTree(hasher, db, maxDepth, nilHash,
 		GCThreshold(1024*10))
 	if err != nil {
 		t.Fatal(err)
@@ -867,7 +867,7 @@ func benchmarkSet(b *testing.B, env testEnv, depth uint8, items []Item) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	smt, err := NewBASSparseMerkleTree(env.hasher, db, depth, nilHash,
+	smt, err := NewBNBSparseMerkleTree(env.hasher, db, depth, nilHash,
 		GCThreshold(1024*10))
 	if err != nil {
 		b.Fatal(err)
@@ -900,7 +900,7 @@ func benchmarkMultiset(b *testing.B, env testEnv, depth uint8, items []Item) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	smt, err := NewBASSparseMerkleTree(env.hasher, db, depth, nilHash,
+	smt, err := NewBNBSparseMerkleTree(env.hasher, db, depth, nilHash,
 		GCThreshold(1024*10))
 	if err != nil {
 		b.Fatal(err)

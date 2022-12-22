@@ -36,14 +36,14 @@ func storageFullTreeNodeKey(depth uint8, path uint64) []byte {
 	return bytes.Join([][]byte{storageFullTreeNodePrefix, {depth}, pathBuf}, sep)
 }
 
-var _ SparseMerkleTree = (*BASSparseMerkleTree)(nil)
+var _ SparseMerkleTree = (*BNBSparseMerkleTree)(nil)
 
 func NewSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, hashes [][]byte, opts ...Option) (SparseMerkleTree, error) {
 	if maxDepth == 0 || maxDepth%4 != 0 {
 		return nil, ErrInvalidDepth
 	}
 
-	smt := &BASSparseMerkleTree{
+	smt := &BNBSparseMerkleTree{
 		maxDepth:       maxDepth,
 		journal:        newJournal(),
 		nilHashes:      &nilHashes{hashes},
@@ -92,14 +92,14 @@ func NewSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, has
 	return smt, nil
 }
 
-func NewBASSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, nilHash []byte,
+func NewBNBSparseMerkleTree(hasher *Hasher, db database.TreeDB, maxDepth uint8, nilHash []byte,
 	opts ...Option) (SparseMerkleTree, error) {
 
 	if maxDepth == 0 || maxDepth%4 != 0 {
 		return nil, ErrInvalidDepth
 	}
 
-	smt := &BASSparseMerkleTree{
+	smt := &BNBSparseMerkleTree{
 		maxDepth:       maxDepth,
 		journal:        newJournal(),
 		nilHashes:      constructNilHashes(maxDepth, nilHash, hasher),
@@ -302,7 +302,7 @@ func (stat *gcStatus) clean(index int) {
 	}
 }
 
-type BASSparseMerkleTree struct {
+type BNBSparseMerkleTree struct {
 	version          Version
 	recentVersion    Version
 	root             *TreeNode
@@ -322,7 +322,7 @@ type BASSparseMerkleTree struct {
 	metrics          metrics.Metrics
 }
 
-func (tree *BASSparseMerkleTree) initFromStorage() error {
+func (tree *BNBSparseMerkleTree) initFromStorage() error {
 	tree.root = NewTreeNode(0, 0, tree.nilHashes, tree.hasher)
 	// recovery version info
 	buf, err := tree.db.Get(latestVersionKey)
@@ -369,7 +369,7 @@ func (tree *BASSparseMerkleTree) initFromStorage() error {
 	return nil
 }
 
-func (tree *BASSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64, depth uint8, isCreated bool) error {
+func (tree *BNBSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64, depth uint8, isCreated bool) error {
 	if node.Children[nibble] != nil &&
 		!node.Children[nibble].IsTemporary() {
 		return nil
@@ -397,11 +397,11 @@ func (tree *BASSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64,
 	return nil
 }
 
-func (tree *BASSparseMerkleTree) Size() uint64 {
+func (tree *BNBSparseMerkleTree) Size() uint64 {
 	return tree.rootSize
 }
 
-func (tree *BASSparseMerkleTree) Get(key uint64, version *Version) ([]byte, error) {
+func (tree *BNBSparseMerkleTree) Get(key uint64, version *Version) ([]byte, error) {
 	if tree.IsEmpty() {
 		return nil, ErrEmptyRoot
 	}
@@ -459,7 +459,7 @@ func (tree *BASSparseMerkleTree) Get(key uint64, version *Version) ([]byte, erro
 	return tree.nilHashes.Get(tree.maxDepth), nil
 }
 
-func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
+func (tree *BNBSparseMerkleTree) Set(key uint64, val []byte) error {
 	if key >= 1<<tree.maxDepth {
 		return ErrInvalidKey
 	}
@@ -501,7 +501,7 @@ func (tree *BASSparseMerkleTree) Set(key uint64, val []byte) error {
 // 1. generate all intermediate nodes, with lock;
 // 2. set all leaves, without lock;
 // 3. re-compute hash, from leaves to root
-func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
+func (tree *BNBSparseMerkleTree) MultiSet(items []Item) error {
 	size := len(items)
 	if size == 0 {
 		return nil
@@ -575,7 +575,7 @@ func (tree *BASSparseMerkleTree) MultiSet(items []Item) error {
 }
 
 // return leaf node
-func (tree *BASSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, item Item) (*TreeNode, error) {
+func (tree *BNBSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, item Item) (*TreeNode, error) {
 	var (
 		key         = item.Key
 		val         = item.Val
@@ -612,15 +612,15 @@ func (tree *BASSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, i
 	return targetNode, nil
 }
 
-func (tree *BASSparseMerkleTree) IsEmpty() bool {
+func (tree *BNBSparseMerkleTree) IsEmpty() bool {
 	return bytes.Equal(tree.root.Root(), tree.nilHashes.Get(0))
 }
 
-func (tree *BASSparseMerkleTree) Root() []byte {
+func (tree *BNBSparseMerkleTree) Root() []byte {
 	return tree.root.Root()
 }
 
-func (tree *BASSparseMerkleTree) GetProof(key uint64) (Proof, error) {
+func (tree *BNBSparseMerkleTree) GetProof(key uint64) (Proof, error) {
 	proofs := make([][]byte, 0, tree.maxDepth/4)
 	if tree.IsEmpty() {
 		for i := tree.maxDepth; i > 0; i-- {
@@ -667,7 +667,7 @@ func (tree *BASSparseMerkleTree) GetProof(key uint64) (Proof, error) {
 	return utils.ReverseBytes(proofs[:]), nil
 }
 
-func (tree *BASSparseMerkleTree) VerifyProof(key uint64, proof Proof) bool {
+func (tree *BNBSparseMerkleTree) VerifyProof(key uint64, proof Proof) bool {
 	if key >= 1<<tree.maxDepth {
 		return false
 	}
@@ -725,21 +725,21 @@ func (tree *BASSparseMerkleTree) VerifyProof(key uint64, proof Proof) bool {
 	return bytes.Equal(root, node)
 }
 
-func (tree *BASSparseMerkleTree) LatestVersion() Version {
+func (tree *BNBSparseMerkleTree) LatestVersion() Version {
 	return tree.version
 }
 
-func (tree *BASSparseMerkleTree) RecentVersion() Version {
+func (tree *BNBSparseMerkleTree) RecentVersion() Version {
 	return tree.recentVersion
 }
 
-func (tree *BASSparseMerkleTree) Reset() {
+func (tree *BNBSparseMerkleTree) Reset() {
 	tree.journal.flush()
 	tree.root = tree.lastSaveRoot
 	tree.rootSize = tree.lastSaveRootSize
 }
 
-func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, fullNode *TreeNode, version Version, recentVersion *Version) (uint64, error) {
+func (tree *BNBSparseMerkleTree) writeNode(db database.Batcher, fullNode *TreeNode, version Version, recentVersion *Version) (uint64, error) {
 	changed := uint64(0)
 	if fullNode.PreviousVersion() > tree.gcStatus.latestGCVersion {
 		// If the previous version is greater than the last GC version,
@@ -772,7 +772,7 @@ func (tree *BASSparseMerkleTree) writeNode(db database.Batcher, fullNode *TreeNo
 	return changed, nil
 }
 
-func (tree *BASSparseMerkleTree) Commit(recentVersion *Version) (Version, error) {
+func (tree *BNBSparseMerkleTree) Commit(recentVersion *Version) (Version, error) {
 	newVersion := tree.version + 1
 	if recentVersion != nil && *recentVersion >= newVersion {
 		return tree.version, ErrVersionTooHigh
@@ -847,7 +847,7 @@ func (tree *BASSparseMerkleTree) Commit(recentVersion *Version) (Version, error)
 	return newVersion, nil
 }
 
-func (tree *BASSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, db database.Batcher) (uint64, error) {
+func (tree *BNBSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, db database.Batcher) (uint64, error) {
 	// remove value nodes
 	next, changed := child.Rollback(oldVersion)
 	if !next {
@@ -895,7 +895,7 @@ func (tree *BASSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, d
 	return changed, nil
 }
 
-func (tree *BASSparseMerkleTree) Rollback(version Version) error {
+func (tree *BNBSparseMerkleTree) Rollback(version Version) error {
 	if tree.IsEmpty() {
 		return ErrEmptyRoot
 	}
@@ -946,7 +946,7 @@ func (tree *BASSparseMerkleTree) Rollback(version Version) error {
 	return nil
 }
 
-func (tree *BASSparseMerkleTree) collectGCMetrics() {
+func (tree *BNBSparseMerkleTree) collectGCMetrics() {
 	tree.metrics.LatestGCVersion(uint64(tree.gcStatus.latestGCVersion))
 	var gcVersions [10]*metrics.GCVersion
 	for i := range tree.gcStatus.versions {
@@ -958,7 +958,7 @@ func (tree *BASSparseMerkleTree) collectGCMetrics() {
 	tree.metrics.GCVersions(gcVersions)
 }
 
-func (tree *BASSparseMerkleTree) recompute(node *TreeNode, journals *journal) {
+func (tree *BNBSparseMerkleTree) recompute(node *TreeNode, journals *journal) {
 	version := node.latestVersion()
 	child := node
 	for child != nil {

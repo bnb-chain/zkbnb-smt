@@ -1,7 +1,7 @@
 ## zkbnb-smt
 
 <p>
-  <img src="https://img.shields.io/github/workflow/status/bnb-chain/zkbnb-smt/Checker?style=flat-square">
+  <img src="https://img.shields.io/github/actions/workflow/status/bnb-chain/zkbnb-smt/checker.yml?style=flat-square">
   <a href="https://github.com/bnb-chain/zkbnb-smt/blob/master/LICENSE">
     <img src="https://img.shields.io/github/license/globocom/go-buffer?color=blue&style=flat-square">
   </a>

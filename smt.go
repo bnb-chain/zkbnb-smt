@@ -978,3 +978,7 @@ func (tree *BNBSparseMerkleTree) recompute(node *TreeNode, journals *journal) {
 		}
 	}
 }
+
+func (tree *BNBSparseMerkleTree) QueryVersion(rootHash []byte) (Version, error) {
+	return tree.root.QueryVersion(rootHash)
+}

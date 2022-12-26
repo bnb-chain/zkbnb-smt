@@ -27,4 +27,6 @@ var (
 	ErrInvalidDepth = errors.New("depth must be a multiple of 4")
 
 	ErrExtendNode = errors.New("extending node error")
+
+	ErrVersionNotFound = errors.New("version not found")
 )

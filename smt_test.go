@@ -740,6 +740,65 @@ func Test_BNBSparseMerkleTree_Set(t *testing.T) {
 	}
 }
 
+func Test_BNBSparseMerkleTree_QueryVersion(t *testing.T) {
+	for _, env := range prepareEnv() {
+		t.Logf("test [%s]", env.tag)
+		testQueryVersion(t, env, 8)
+	}
+}
+
+func testQueryVersion(t *testing.T, env testEnv, depth uint8) {
+	db, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	smt := newSMT(t, env.hasher, db, depth)
+
+	items := []Item{
+		{0, env.hasher.Hash([]byte("0"))},
+		{2, env.hasher.Hash([]byte("2"))},
+	}
+	smt.Set(items[0].Key, items[0].Val)
+	ver1, err := smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root1 := smt.Root()
+	actualVer1, err := smt.QueryVersion(root1)
+	if ver1 != actualVer1 {
+		t.Fatal("versions are not equal between queried result and actual")
+	}
+
+	smt.Set(items[1].Key, items[1].Val)
+	ver2, err := smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root2 := smt.Root()
+	actualVer2, err := smt.QueryVersion(root2)
+	if ver2 != actualVer2 {
+		t.Fatal("versions are not equal between queried result and actual")
+	}
+
+	// Rollback to version 1
+	err = smt.Rollback(ver1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rollbackVer1, err := smt.QueryVersion(root1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ver1 != rollbackVer1 {
+		t.Fatal("versions are not equal between queried result and actual")
+	}
+
+	_, err = smt.QueryVersion(root2)
+	if !errors.Is(err, ErrVersionNotFound) {
+		t.Fatal("ErrVersionNotFound expected, but not received")
+	}
+}
+
 func testMultiSet(t *testing.T, env testEnv, items []Item, depth uint8) (time.Duration, time.Duration) {
 	//t.Logf("test depth %d", depth)
 	db1, err := env.db()

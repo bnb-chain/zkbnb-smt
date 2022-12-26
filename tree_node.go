@@ -6,6 +6,7 @@
 package bsmt
 
 import (
+	"bytes"
 	"sync"
 )
 
@@ -64,6 +65,18 @@ func (node *TreeNode) Root() []byte {
 		return node.nilHash
 	}
 	return node.Versions[len(node.Versions)-1].Hash
+}
+
+func (node *TreeNode) QueryVersion(rootHash []byte) (Version, error) {
+	node.mu.RLock()
+	defer node.mu.RUnlock()
+
+	for _, v := range node.Versions {
+		if bytes.Equal(rootHash, v.Hash) {
+			return v.Ver, nil
+		}
+	}
+	return Version(0), ErrVersionNotFound
 }
 
 // Root Get latest hash of a node without a lock

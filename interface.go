@@ -26,5 +26,6 @@ type (
 		Reset()
 		Commit(recentVersion *Version) (Version, error)
 		Rollback(version Version) error
+		QueryVersion(rootHash []byte) (Version, error)
 	}
 )

@@ -750,8 +750,7 @@ func (tree *BASSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, d
 	for nibble, subChild := range child.Children {
 		if subChild != nil {
 			subDepth := child.depth + 4
-			path := child.path * 16 + uint64(nibble)
-			err := tree.extendNode(child, uint64(nibble), path, subDepth, false)
+			err := tree.extendNode(child, uint64(nibble), subChild.path, subDepth, false)
 			if err != nil {
 				return changed, err
 			}

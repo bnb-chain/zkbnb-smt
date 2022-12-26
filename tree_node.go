@@ -316,6 +316,8 @@ func (node *StorageTreeNode) ToTreeNode(depth uint8, nilHashes *nilHashes, hashe
 				nilChildHash: nilHashes.Get(depth + 8),
 				hasher:       hasher,
 				temporary:    true,
+				depth:        depth + 4,
+				path:         treeNode.path<<4 + uint64(i),
 			}
 		}
 	}

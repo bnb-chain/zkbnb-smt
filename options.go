@@ -11,34 +11,34 @@ import (
 )
 
 // Option is a function that configures SMT.
-type Option func(*BASSparseMerkleTree)
+type Option func(*BNBSparseMerkleTree)
 
 func InitializeVersion(version Version) Option {
-	return func(smt *BASSparseMerkleTree) {
+	return func(smt *BNBSparseMerkleTree) {
 		smt.version = version
 	}
 }
 
 func BatchSizeLimit(limit int) Option {
-	return func(smt *BASSparseMerkleTree) {
+	return func(smt *BNBSparseMerkleTree) {
 		smt.batchSizeLimit = limit
 	}
 }
 
 func DBCacheSize(size int) Option {
-	return func(smt *BASSparseMerkleTree) {
+	return func(smt *BNBSparseMerkleTree) {
 		smt.dbCacheSize = size
 	}
 }
 
 func GoRoutinePool(pool *ants.Pool) Option {
-	return func(smt *BASSparseMerkleTree) {
+	return func(smt *BNBSparseMerkleTree) {
 		smt.goroutinePool = pool
 	}
 }
 
 func GCThreshold(threshold uint64) Option {
-	return func(smt *BASSparseMerkleTree) {
+	return func(smt *BNBSparseMerkleTree) {
 		if smt.gcStatus != nil {
 			smt.gcStatus.threshold = threshold
 			smt.gcStatus.segment = threshold / 10
@@ -48,7 +48,7 @@ func GCThreshold(threshold uint64) Option {
 }
 
 func EnableMetrics(metrics metrics.Metrics) Option {
-	return func(smt *BASSparseMerkleTree) {
+	return func(smt *BNBSparseMerkleTree) {
 		smt.metrics = metrics
 	}
 }

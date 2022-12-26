@@ -5,7 +5,9 @@
 
 package bsmt
 
-import "sync"
+import (
+	"sync"
+)
 
 const (
 	hashSize    = 32
@@ -19,6 +21,8 @@ func NewTreeNode(depth uint8, path uint64, nilHashes *nilHashes, hasher *Hasher)
 		path:         path,
 		depth:        depth,
 		hasher:       hasher,
+		internalMu:   make([]sync.RWMutex, 14),
+		internalVer:  make([]Version, 14),
 	}
 	for i := 0; i < 2; i++ {
 		treeNode.Internals[i] = nilHashes.Get(depth + 1)
@@ -47,12 +51,23 @@ type TreeNode struct {
 	depth        uint8
 	hasher       *Hasher
 	temporary    bool
+	internalMu   []sync.RWMutex
+	internalVer  []Version
 }
 
+// Root Get latest hash of a node
 func (node *TreeNode) Root() []byte {
 	node.mu.RLock()
 	defer node.mu.RUnlock()
 
+	if len(node.Versions) == 0 {
+		return node.nilHash
+	}
+	return node.Versions[len(node.Versions)-1].Hash
+}
+
+// Root Get latest hash of a node without a lock
+func (node *TreeNode) root() []byte {
 	if len(node.Versions) == 0 {
 		return node.nilHash
 	}
@@ -158,6 +173,16 @@ func (node *TreeNode) Copy() *TreeNode {
 		depth:        node.depth,
 		hasher:       node.hasher,
 		temporary:    node.temporary,
+		internalMu:   node.internalMu,
+		internalVer:  node.internalVer,
+	}
+}
+
+func (node *TreeNode) mark(nibble int) {
+	//node.mu.Lock()
+	//defer node.mu.Unlock()
+	for _, i := range leafInternalMap[nibble] {
+		node.Internals[i] = nil
 	}
 }
 
@@ -307,6 +332,8 @@ func (node *StorageTreeNode) ToTreeNode(depth uint8, nilHashes *nilHashes, hashe
 		path:         node.Path,
 		depth:        depth,
 		hasher:       hasher,
+		internalMu:   make([]sync.RWMutex, 14),
+		internalVer:  make([]Version, 14),
 	}
 	for i := 0; i < 16; i++ {
 		if node.Children[i] != nil && len(node.Children[i].Versions) > 0 {
@@ -323,4 +350,120 @@ func (node *StorageTreeNode) ToTreeNode(depth uint8, nilHashes *nilHashes, hashe
 	}
 
 	return treeNode
+}
+
+func (node *TreeNode) latestVersion() Version {
+	if len(node.Versions) <= 0 {
+		return 0
+	}
+	return node.Versions[len(node.Versions)-1].Ver
+}
+
+func (node *TreeNode) latestVersionWithLock() Version {
+	node.mu.RLock()
+	defer node.mu.RUnlock()
+	if len(node.Versions) <= 0 {
+		return 0
+	}
+	return node.Versions[len(node.Versions)-1].Ver
+}
+
+// recompute inner node
+func (node *TreeNode) recompute(child *TreeNode, journals *journal, version Version) bool {
+	nibble := int(child.path & 0xf)
+	left, right := node.nilChildHash, node.nilChildHash
+	// if sibling haven't finished yet,quit; sibling will be charge for computing
+	switch nibble % 2 {
+	case 0:
+		left = child.root()
+		if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
+			if sibling.latestVersionWithLock() < version {
+				return false
+			}
+			right = sibling.root()
+		} else if node.Children[nibble^1] != nil {
+			right = node.Children[nibble^1].Root()
+		}
+	case 1:
+		right = child.root()
+		if sibling, exist := journals.get(journalKey{child.depth, child.path ^ 1}); exist {
+			if sibling.latestVersionWithLock() < version {
+				return false
+			}
+			left = sibling.root()
+		} else if node.Children[nibble^1] != nil {
+			left = node.Children[nibble^1].Root()
+		}
+	}
+	prefix := 6
+	for i := 4; i >= 1; i >>= 1 {
+		nibble = nibble / 2
+		hash, setBefore := node.setInternal(prefix+nibble, left, right, version)
+		if setBefore {
+			return false
+		}
+		siblingNibble := prefix + nibble ^ 1
+		siblingHash := node.getInternal(siblingNibble)
+		if siblingHash == nil {
+			return false
+		}
+		switch nibble % 2 {
+		case 0:
+			left = hash
+			right = siblingHash
+		case 1:
+			right = hash
+			left = siblingHash
+		}
+		prefix = prefix - i
+	}
+	// update current root
+	node.newVersion(&VersionInfo{
+		Ver:  version,
+		Hash: node.hasher.Hash(node.Internals[0], node.Internals[1]),
+	})
+	return true
+}
+
+func (node *TreeNode) setInternal(idx int, left []byte, right []byte, version Version) ([]byte, bool) {
+	node.internalMu[idx].Lock()
+	defer node.internalMu[idx].Unlock()
+	if node.Internals[idx] != nil {
+		return node.Internals[idx], true
+	}
+	hash := node.hasher.Hash(left, right)
+	node.Internals[idx] = hash
+	node.internalVer[idx] = version
+	return hash, false
+}
+
+func (node *TreeNode) getInternal(idx int) []byte {
+	node.internalMu[idx].RLock()
+	defer node.internalMu[idx].RUnlock()
+	return node.Internals[idx]
+}
+
+func (node *TreeNode) getChild(nibble int) *TreeNode {
+	node.mu.RLock()
+	defer node.mu.RUnlock()
+	return node.Children[nibble]
+}
+
+var leafInternalMap = map[int][]int{
+	0:  {0, 2, 6},
+	1:  {0, 2, 6},
+	2:  {0, 2, 7},
+	3:  {0, 2, 7},
+	4:  {0, 3, 8},
+	5:  {0, 3, 8},
+	6:  {0, 3, 9},
+	7:  {0, 3, 9},
+	8:  {1, 4, 10},
+	9:  {1, 4, 10},
+	10: {1, 4, 11},
+	11: {1, 4, 11},
+	12: {1, 5, 12},
+	13: {1, 5, 12},
+	14: {1, 5, 13},
+	15: {1, 5, 13},
 }

@@ -404,6 +404,7 @@ func testRollbackRecovery(t *testing.T, hasher *Hasher, dbInitializer func() (da
 		t.Fatal(err)
 	}
 	version1, err = smt2.Commit(nil)
+	rootVer1 := smt2.Root()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,8 +447,14 @@ func testRollbackRecovery(t *testing.T, hasher *Hasher, dbInitializer func() (da
 	}
 
 	err = smt2.Rollback(version1)
+	smt2.Set(key1, val1)
+	_, err = smt2.Commit(nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	rootVer2 := smt2.Root()
+	if !bytes.Equal(rootVer1, rootVer2) {
+		t.Fatal("Roots at version1 and version2 are NOT equal")
 	}
 
 	err = smt.Rollback(version1)
@@ -476,6 +483,7 @@ func Test_BNBSparseMerkleTree_RollbackAfterRecovery(t *testing.T) {
 	for _, env := range prepareEnv() {
 		t.Logf("test [%s]", env.tag)
 		testRollbackRecovery(t, env.hasher, env.db)
+		break
 	}
 }
 

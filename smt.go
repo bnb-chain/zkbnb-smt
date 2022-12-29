@@ -772,8 +772,7 @@ func (tree *BNBSparseMerkleTree) writeNode(db database.Batcher, fullNode *TreeNo
 }
 
 func (tree *BNBSparseMerkleTree) Commit(recentVersion *Version) (Version, error) {
-	newVersion := tree.version + 1
-	return tree.CommitWithNewVersion(recentVersion, &newVersion)
+	return tree.CommitWithNewVersion(recentVersion, nil)
 }
 
 // CommitWithNewVersion commits SMT with specified version.

@@ -907,6 +907,49 @@ func verifyItems(t *testing.T, smt1 SparseMerkleTree, smt2 SparseMerkleTree, ite
 	}
 }
 
+func Test_BNBSparseMerkleTree_CommitWithNewVersion(t *testing.T) {
+	tests := []struct {
+		name      string
+		depth     uint8
+		recentVer *Version
+		newVer    *Version
+		expected  Version
+	}{
+		{
+			name:      "specified new version",
+			depth:     8,
+			recentVer: nil,
+			newVer:    toVersion(2),
+			expected:  2,
+		},
+		{
+			name:      "no specified new version",
+			depth:     8,
+			recentVer: nil,
+			newVer:    nil,
+			expected:  1,
+		},
+	}
+
+	envs := prepareEnv()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, env := range envs {
+				db, _ := env.db()
+				smt := newSMT(t, env.hasher, db, test.depth)
+				newVersion, err := smt.CommitWithNewVersion(test.recentVer, test.newVer)
+				assert.NoError(t, err)
+				assert.Equal(t, test.expected, newVersion)
+			}
+		})
+	}
+}
+
+func toVersion(u uint64) *Version {
+	v := Version(u)
+	return &v
+}
+
 func Benchmark_SparseMerkleTree_Set_memoryDB(b *testing.B) {
 	benchmarkSet(b, prepareEnv()[0], 8, prepareKVData(prepareEnv()[0].hasher))
 }

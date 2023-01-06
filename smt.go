@@ -733,6 +733,16 @@ func (tree *BNBSparseMerkleTree) RecentVersion() Version {
 	return tree.recentVersion
 }
 
+func (tree *BNBSparseMerkleTree) Versions() []Version {
+	tree.root.mu.RLock()
+	defer tree.root.mu.RUnlock()
+	var versions []Version
+	for _, v := range tree.root.Versions {
+		versions = append(versions, v.Ver)
+	}
+	return versions
+}
+
 func (tree *BNBSparseMerkleTree) Reset() {
 	tree.journal.flush()
 	tree.root = tree.lastSaveRoot

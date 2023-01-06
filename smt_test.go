@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	"hash"
@@ -738,6 +739,54 @@ func Test_BNBSparseMerkleTree_Set(t *testing.T) {
 		t.Logf("test [%s]", env.tag)
 		testSet(t, env, 8)
 	}
+}
+
+func Test_BNBSparseMerkleTree_Versions(t *testing.T) {
+	for _, env := range prepareEnv() {
+		t.Logf("test [%s]", env.tag)
+		testVersions(t, env, 8)
+		break
+	}
+}
+
+func testVersions(t *testing.T, env testEnv, depth uint8) {
+	db, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	smt := newSMT(t, env.hasher, db, depth)
+	data := prepareKVData(env.hasher)
+	_ = smt.Set(data[0].Key, data[0].Val)
+	_, err = smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(1)}, "versions not match")
+
+	_ = smt.Set(data[0].Key, data[0].Val)
+	_, err = smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(1), Version(2)}, "versions not match")
+
+	_ = smt.Set(data[0].Key, data[0].Val)
+	_, err = smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(1), Version(2), Version(3)}, "versions not match")
+
+	_ = smt.Set(data[1].Key, data[1].Val)
+	ver2 := Version(2)
+	version, err := smt.Commit(&ver2)
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(2), Version(3), Version(4)}, "versions not match")
+
+	_ = smt.Set(data[1].Key, data[1].Val)
+	_, err = smt.Commit(&version)
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(4), Version(5)}, "versions not match")
 }
 
 func testMultiSet(t *testing.T, env testEnv, items []Item, depth uint8) (time.Duration, time.Duration) {

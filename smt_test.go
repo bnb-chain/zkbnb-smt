@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	"hash"
@@ -740,6 +741,54 @@ func Test_BNBSparseMerkleTree_Set(t *testing.T) {
 	}
 }
 
+func Test_BNBSparseMerkleTree_Versions(t *testing.T) {
+	for _, env := range prepareEnv() {
+		t.Logf("test [%s]", env.tag)
+		testVersions(t, env, 8)
+		break
+	}
+}
+
+func testVersions(t *testing.T, env testEnv, depth uint8) {
+	db, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	smt := newSMT(t, env.hasher, db, depth)
+	data := prepareKVData(env.hasher)
+	_ = smt.Set(data[0].Key, data[0].Val)
+	_, err = smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(1)}, "versions not match")
+
+	_ = smt.Set(data[0].Key, data[0].Val)
+	_, err = smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(1), Version(2)}, "versions not match")
+
+	_ = smt.Set(data[0].Key, data[0].Val)
+	_, err = smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(1), Version(2), Version(3)}, "versions not match")
+
+	_ = smt.Set(data[1].Key, data[1].Val)
+	ver2 := Version(2)
+	version, err := smt.Commit(&ver2)
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(2), Version(3), Version(4)}, "versions not match")
+
+	_ = smt.Set(data[1].Key, data[1].Val)
+	_, err = smt.Commit(&version)
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(4), Version(5)}, "versions not match")
+}
+
 func testMultiSet(t *testing.T, env testEnv, items []Item, depth uint8) (time.Duration, time.Duration) {
 	//t.Logf("test depth %d", depth)
 	db1, err := env.db()
@@ -856,6 +905,49 @@ func verifyItems(t *testing.T, smt1 SparseMerkleTree, smt2 SparseMerkleTree, ite
 			t.Fatal("verify proof from tree2 failed")
 		}
 	}
+}
+
+func Test_BNBSparseMerkleTree_CommitWithNewVersion(t *testing.T) {
+	tests := []struct {
+		name      string
+		depth     uint8
+		recentVer *Version
+		newVer    *Version
+		expected  Version
+	}{
+		{
+			name:      "specified new version",
+			depth:     8,
+			recentVer: nil,
+			newVer:    toVersion(2),
+			expected:  2,
+		},
+		{
+			name:      "no specified new version",
+			depth:     8,
+			recentVer: nil,
+			newVer:    nil,
+			expected:  1,
+		},
+	}
+
+	envs := prepareEnv()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, env := range envs {
+				db, _ := env.db()
+				smt := newSMT(t, env.hasher, db, test.depth)
+				newVersion, err := smt.CommitWithNewVersion(test.recentVer, test.newVer)
+				assert.NoError(t, err)
+				assert.Equal(t, test.expected, newVersion)
+			}
+		})
+	}
+}
+
+func toVersion(u uint64) *Version {
+	v := Version(u)
+	return &v
 }
 
 func Benchmark_SparseMerkleTree_Set_memoryDB(b *testing.B) {

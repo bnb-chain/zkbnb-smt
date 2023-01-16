@@ -25,6 +25,8 @@ type (
 		RecentVersion() Version
 		Reset()
 		Commit(recentVersion *Version) (Version, error)
+		CommitWithNewVersion(recentVersion *Version, newVersion *Version) (Version, error)
 		Rollback(version Version) error
+		Versions() []Version
 	}
 )

@@ -16,6 +16,8 @@ var (
 
 	ErrVersionTooHigh = errors.New("the version is higher than the latest version")
 
+	ErrVersionTooLow = errors.New("the version is lower than the latest version")
+
 	ErrNodeNotFound = errors.New("tree node not found")
 
 	ErrVersionMismatched = errors.New("the version is mismatched with the database")

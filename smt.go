@@ -8,13 +8,12 @@ package bsmt
 import (
 	"bytes"
 	"encoding/binary"
-	"sync"
-
 	"github.com/ethereum/go-ethereum/rlp"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/panjf2000/ants/v2"
 	sysMemory "github.com/pbnjay/memory"
 	"github.com/pkg/errors"
+	"sync"
 
 	"github.com/bnb-chain/zkbnb-smt/database"
 	"github.com/bnb-chain/zkbnb-smt/database/memory"
@@ -773,9 +772,25 @@ func (tree *BNBSparseMerkleTree) writeNode(db database.Batcher, fullNode *TreeNo
 }
 
 func (tree *BNBSparseMerkleTree) Commit(recentVersion *Version) (Version, error) {
-	newVersion := tree.version + 1
-	if recentVersion != nil && *recentVersion >= newVersion {
+	return tree.CommitWithNewVersion(recentVersion, nil)
+}
+
+// CommitWithNewVersion commits SMT with specified version.
+func (tree *BNBSparseMerkleTree) CommitWithNewVersion(recentVersion *Version, newVersion *Version) (Version, error) {
+	var newVer Version
+	if newVersion == nil {
+		newVer = tree.version + 1
+	} else {
+		newVer = *newVersion
+	}
+
+	// new version should greater than recent version
+	if recentVersion != nil && newVer <= *recentVersion {
 		return tree.version, ErrVersionTooHigh
+	}
+	// new version should greater than the latest version
+	if recentVersion == nil && newVer <= tree.version {
+		return tree.version, ErrVersionTooLow
 	}
 
 	size := uint64(0)
@@ -784,7 +799,7 @@ func (tree *BNBSparseMerkleTree) Commit(recentVersion *Version) (Version, error)
 		// write tree nodes, prune old version
 		batch := tree.db.NewBatch()
 		err := tree.journal.iterate(func(key journalKey, node *TreeNode) error {
-			changed, err := tree.writeNode(batch, node, newVersion, recentVersion)
+			changed, err := tree.writeNode(batch, node, newVer, recentVersion)
 			if err != nil {
 				return err
 			}
@@ -798,7 +813,7 @@ func (tree *BNBSparseMerkleTree) Commit(recentVersion *Version) (Version, error)
 			return tree.version, err
 		}
 		buf := make([]byte, 8)
-		binary.BigEndian.PutUint64(buf, uint64(newVersion))
+		binary.BigEndian.PutUint64(buf, uint64(newVer))
 		err = batch.Set(latestVersionKey, buf)
 		if err != nil {
 			return tree.version, err
@@ -820,7 +835,7 @@ func (tree *BNBSparseMerkleTree) Commit(recentVersion *Version) (Version, error)
 		batch.Reset()
 	}
 
-	tree.version = newVersion
+	tree.version = newVer
 	if recentVersion != nil {
 		tree.recentVersion = *recentVersion
 	}
@@ -844,7 +859,7 @@ func (tree *BNBSparseMerkleTree) Commit(recentVersion *Version) (Version, error)
 		tree.collectGCMetrics()
 	}
 
-	return newVersion, nil
+	return newVer, nil
 }
 
 func (tree *BNBSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, db database.Batcher) (uint64, error) {

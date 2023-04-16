@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	"hash"
@@ -856,6 +857,49 @@ func verifyItems(t *testing.T, smt1 SparseMerkleTree, smt2 SparseMerkleTree, ite
 			t.Fatal("verify proof from tree2 failed")
 		}
 	}
+}
+
+func Test_BNBSparseMerkleTree_CommitWithNewVersion(t *testing.T) {
+	tests := []struct {
+		name      string
+		depth     uint8
+		recentVer *Version
+		newVer    *Version
+		expected  Version
+	}{
+		{
+			name:      "specified new version",
+			depth:     8,
+			recentVer: nil,
+			newVer:    toVersion(2),
+			expected:  2,
+		},
+		{
+			name:      "no specified new version",
+			depth:     8,
+			recentVer: nil,
+			newVer:    nil,
+			expected:  1,
+		},
+	}
+
+	envs := prepareEnv()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, env := range envs {
+				db, _ := env.db()
+				smt := newSMT(t, env.hasher, db, test.depth)
+				newVersion, err := smt.CommitWithNewVersion(test.recentVer, test.newVer)
+				assert.NoError(t, err)
+				assert.Equal(t, test.expected, newVersion)
+			}
+		})
+	}
+}
+
+func toVersion(u uint64) *Version {
+	v := Version(u)
+	return &v
 }
 
 func Benchmark_SparseMerkleTree_Set_memoryDB(b *testing.B) {

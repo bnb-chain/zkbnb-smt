@@ -459,10 +459,17 @@ func (tree *BNBSparseMerkleTree) Get(key uint64, version *Version) ([]byte, erro
 }
 
 func (tree *BNBSparseMerkleTree) Set(key uint64, val []byte) error {
+	return tree.SetWithVersion(key, val, tree.version+1)
+}
+
+// SetWithVersion sets key, value pair with a specific version.
+func (tree *BNBSparseMerkleTree) SetWithVersion(key uint64, val []byte, newVersion Version) error {
 	if key >= 1<<tree.maxDepth {
 		return ErrInvalidKey
 	}
-	newVersion := tree.version + 1
+	if newVersion <= tree.version {
+		return ErrVersionTooLow
+	}
 
 	targetNode := tree.root
 	var depth uint8 = 4
@@ -496,11 +503,16 @@ func (tree *BNBSparseMerkleTree) Set(key uint64, val []byte) error {
 }
 
 // MultiSet sets k,v pairs in parallel
+func (tree *BNBSparseMerkleTree) MultiSet(items []Item) error {
+	return tree.MultiSetWithVersion(items, tree.version+1)
+}
+
+// MultiSetWithVersion sets k,v pairs in parallel with a specific version.
 //
 // 1. generate all intermediate nodes, with lock;
 // 2. set all leaves, without lock;
 // 3. re-compute hash, from leaves to root
-func (tree *BNBSparseMerkleTree) MultiSet(items []Item) error {
+func (tree *BNBSparseMerkleTree) MultiSetWithVersion(items []Item, newVersion Version) error {
 	size := len(items)
 	if size == 0 {
 		return nil
@@ -520,7 +532,7 @@ func (tree *BNBSparseMerkleTree) MultiSet(items []Item) error {
 		}
 		err := func(it Item) error {
 			return tree.goroutinePool.Submit(func() {
-				leaf, err := tree.setIntermediateAndLeaves(tmpJournal, it)
+				leaf, err := tree.setIntermediateAndLeaves(tmpJournal, it, newVersion)
 				if _, exist := leavesJournal.get(journalKey{leaf.depth, leaf.path}); !exist {
 					leavesJournal.set(journalKey{leaf.depth, leaf.path}, leaf)
 				}
@@ -574,13 +586,12 @@ func (tree *BNBSparseMerkleTree) MultiSet(items []Item) error {
 }
 
 // return leaf node
-func (tree *BNBSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, item Item) (*TreeNode, error) {
+func (tree *BNBSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, item Item, newVer Version) (*TreeNode, error) {
 	var (
 		key         = item.Key
 		val         = item.Val
 		depth uint8 = 4
 	)
-	newVersion := tree.version + 1
 	targetNode := tree.root
 	// find middle nodes
 	for i := 0; i < int(tree.maxDepth)/4; i++ {
@@ -603,7 +614,7 @@ func (tree *BNBSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, i
 	}
 	targetNode = targetNode.Copy()
 	// update hash of leaf node
-	targetNode.Set(val, newVersion)
+	targetNode.Set(val, newVer)
 	tmpJournal.set(journalKey{targetNode.depth, targetNode.path}, targetNode)
 	if p, e := tmpJournal.get(journalKey{depth: targetNode.depth - 4, path: targetNode.path >> 4}); e {
 		p.Children[targetNode.path&0xf] = targetNode
@@ -730,6 +741,16 @@ func (tree *BNBSparseMerkleTree) LatestVersion() Version {
 
 func (tree *BNBSparseMerkleTree) RecentVersion() Version {
 	return tree.recentVersion
+}
+
+func (tree *BNBSparseMerkleTree) Versions() []Version {
+	tree.root.mu.RLock()
+	defer tree.root.mu.RUnlock()
+	var versions []Version
+	for _, v := range tree.root.Versions {
+		versions = append(versions, v.Ver)
+	}
+	return versions
 }
 
 func (tree *BNBSparseMerkleTree) Reset() {

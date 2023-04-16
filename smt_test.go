@@ -484,7 +484,6 @@ func Test_BNBSparseMerkleTree_RollbackAfterRecovery(t *testing.T) {
 	for _, env := range prepareEnv() {
 		t.Logf("test [%s]", env.tag)
 		testRollbackRecovery(t, env.hasher, env.db)
-		break
 	}
 }
 
@@ -665,6 +664,107 @@ func Test_BNBSparseMerkleTree_MultiSet(t *testing.T) {
 	}
 }
 
+func Test_BNBSparseMerkleTree_MultiSetWithVersion(t *testing.T) {
+	rawKvs := map[uint64]string{
+		1:   "val1",
+		2:   "val2",
+		3:   "val3",
+		4:   "val4",
+		5:   "val5",
+		6:   "val6",
+		7:   "val7",
+		8:   "val8",
+		9:   "val9",
+		10:  "val10",
+		11:  "val11",
+		12:  "val12",
+		13:  "val13",
+		14:  "val14",
+		200: "val200",
+		20:  "val20",
+		21:  "val21",
+		22:  "val22",
+		23:  "val23",
+		24:  "val24",
+		26:  "val26",
+		37:  "val37",
+		255: "val255",
+		254: "val254",
+		253: "val253",
+		252: "val252",
+		251: "val251",
+		250: "val250",
+		249: "val249",
+		248: "val248",
+		247: "val247",
+		15:  "val15",
+	}
+
+	depth := []uint8{8}
+	//depth := []uint8{8, 16, 32}
+	for _, env := range prepareEnv() {
+		t.Logf("test [%s]", env.tag)
+		var items []Item
+		for k, v := range rawKvs {
+			items = append(items, Item{
+				Key: k,
+				Val: env.hasher.Hash([]byte(v)),
+			})
+		}
+		for _, d := range depth {
+			testMultiSetWithVersion(t, env, items, d)
+		}
+	}
+}
+
+func testMultiSetWithVersion(t *testing.T, env testEnv, items []Item, depth uint8) (time.Duration, time.Duration) {
+	//t.Logf("test depth %d", depth)
+	db1, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	db2, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db1.Close()
+	defer db2.Close()
+	smt1 := newSMT(t, env.hasher, db1, depth)
+	smt2 := newSMT(t, env.hasher, db2, depth)
+
+	//smt1 MultiSet
+	starT1 := time.Now()
+	newVer := Version(10)
+	err = smt1.MultiSetWithVersion(items, newVer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc1 := time.Since(starT1)
+	//fmt.Printf("MultiSet time cost %v, depth %d, keys %d\n", tc1, depth, len(items))
+
+	_, err = smt1.CommitWithNewVersion(nil, &newVer)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//smt2 Set sequential
+	starT2 := time.Now()
+	for _, item := range items {
+		err := smt2.Set(item.Key, item.Val)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	tc2 := time.Since(starT2)
+	_, err = smt2.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	verifyItems(t, smt1, smt2, items)
+	return tc1, tc2
+}
+
 func Test_MultiSet_Parallel(t *testing.T) {
 	memEnv := prepareEnv()[0]
 	items := prepareKVData(memEnv.hasher)
@@ -739,6 +839,91 @@ func Test_BNBSparseMerkleTree_Set(t *testing.T) {
 		t.Logf("test [%s]", env.tag)
 		testSet(t, env, 8)
 	}
+}
+
+func Test_BNBSparseMerkleTree_Versions(t *testing.T) {
+	for _, env := range prepareEnv() {
+		t.Logf("test [%s]", env.tag)
+		testVersions(t, env, 8)
+	}
+}
+
+func testVersions(t *testing.T, env testEnv, depth uint8) {
+	db, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	smt := newSMT(t, env.hasher, db, depth)
+	data := prepareKVData(env.hasher)
+	_ = smt.Set(data[0].Key, data[0].Val)
+	_, err = smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(1)}, "versions not match")
+
+	_ = smt.Set(data[0].Key, data[0].Val)
+	_, err = smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(1), Version(2)}, "versions not match")
+
+	_ = smt.Set(data[0].Key, data[0].Val)
+	_, err = smt.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(1), Version(2), Version(3)}, "versions not match")
+
+	_ = smt.Set(data[1].Key, data[1].Val)
+	ver2 := Version(2)
+	version, err := smt.Commit(&ver2)
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(2), Version(3), Version(4)}, "versions not match")
+
+	_ = smt.Set(data[1].Key, data[1].Val)
+	_, err = smt.Commit(&version)
+	assert.ElementsMatchf(t, smt.Versions(), []Version{Version(4), Version(5)}, "versions not match")
+}
+
+func Test_BNBSparseMerkleTree_SetWithVersion(t *testing.T) {
+	for _, env := range prepareEnv() {
+		t.Logf("test [%s]", env.tag)
+		testSetWithVersion(t, env, 8)
+	}
+}
+
+func testSetWithVersion(t *testing.T, env testEnv, depth uint8) {
+	t.Logf("test depth %d", depth)
+	db1, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	db2, err := env.db()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+
+	items := []Item{{201, env.hasher.Hash([]byte("val201"))}}
+	smt1 := newSMT(t, env.hasher, db1, depth)
+	newVer := Version(10)
+	smt1.SetWithVersion(items[0].Key, items[0].Val, newVer)
+	_, err = smt1.CommitWithNewVersion(nil, &newVer)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	smt2 := newSMT(t, env.hasher, db2, depth)
+	smt2.Set(items[0].Key, items[0].Val)
+	_, err = smt2.Commit(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	verifyItems(t, smt1, smt2, items)
 }
 
 func testMultiSet(t *testing.T, env testEnv, items []Item, depth uint8) (time.Duration, time.Duration) {
@@ -817,7 +1002,7 @@ func testSet(t *testing.T, env testEnv, depth uint8) {
 		t.Fatal(err)
 	}
 
-	smt2 := newSMT(t, env.hasher, db1, depth)
+	smt2 := newSMT(t, env.hasher, db2, depth)
 	smt2.MultiSet(items)
 	_, err = smt2.Commit(nil)
 	if err != nil {
@@ -871,8 +1056,8 @@ func Test_BNBSparseMerkleTree_CommitWithNewVersion(t *testing.T) {
 			name:      "specified new version",
 			depth:     8,
 			recentVer: nil,
-			newVer:    toVersion(2),
-			expected:  2,
+			newVer:    toVersion(10),
+			expected:  10,
 		},
 		{
 			name:      "no specified new version",
@@ -887,9 +1072,32 @@ func Test_BNBSparseMerkleTree_CommitWithNewVersion(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			for _, env := range envs {
-				db, _ := env.db()
-				smt := newSMT(t, env.hasher, db, test.depth)
-				newVersion, err := smt.CommitWithNewVersion(test.recentVer, test.newVer)
+				db1, err := env.db()
+				if err != nil {
+					t.Fatal(err)
+				}
+				db2, err := env.db()
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer db2.Close()
+
+				items := []Item{{201, env.hasher.Hash([]byte("val201"))}}
+				smt1 := newSMT(t, env.hasher, db1, test.depth)
+				smt1.Set(items[0].Key, items[0].Val)
+				newVersion, err := smt1.CommitWithNewVersion(nil, test.newVer)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				smt2 := newSMT(t, env.hasher, db2, test.depth)
+				smt2.Set(items[0].Key, items[0].Val)
+				_, err = smt2.Commit(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				verifyItems(t, smt1, smt2, items)
 				assert.NoError(t, err)
 				assert.Equal(t, test.expected, newVersion)
 			}

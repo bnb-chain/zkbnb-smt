@@ -807,7 +807,7 @@ func (tree *BNBSparseMerkleTree) CommitWithNewVersion(recentVersion *Version, ne
 
 	// new version should greater than recent version
 	if recentVersion != nil && newVer <= *recentVersion {
-		return tree.version, ErrVersionTooHigh
+		return tree.version, ErrVersionTooLow
 	}
 	// new version should greater than the latest version
 	if recentVersion == nil && newVer <= tree.version {

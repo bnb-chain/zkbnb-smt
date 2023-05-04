@@ -631,7 +631,7 @@ func (tree *BNBSparseMerkleTree) Root() []byte {
 }
 
 func (tree *BNBSparseMerkleTree) GetProof(key uint64) (Proof, error) {
-	proofs := make([][]byte, 0, tree.maxDepth/4)
+	proofs := make([][]byte, 0, tree.maxDepth)
 	if tree.IsEmpty() {
 		for i := tree.maxDepth; i > 0; i-- {
 			proofs = append(proofs, tree.nilHashes.Get(i))
@@ -691,7 +691,7 @@ func (tree *BNBSparseMerkleTree) VerifyProof(key uint64, proof Proof) bool {
 	}
 
 	var depth uint8 = 4
-	var helpers = make([]int, 0, tree.maxDepth/4)
+	var helpers = make([]int, 0, tree.maxDepth)
 
 	for i := 0; i < int(tree.maxDepth)/4; i++ {
 		path := key >> (int(tree.maxDepth) - (i+1)*4)

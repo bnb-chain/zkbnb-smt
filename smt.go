@@ -932,10 +932,6 @@ func (tree *BNBSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, d
 }
 
 func (tree *BNBSparseMerkleTree) Rollback(version Version) error {
-	if tree.IsEmpty() {
-		return ErrEmptyRoot
-	}
-
 	if tree.recentVersion > version {
 		return ErrVersionTooOld
 	}

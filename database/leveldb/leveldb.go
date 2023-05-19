@@ -143,7 +143,7 @@ func (db *Database) Get(key []byte) ([]byte, error) {
 	return dat, err
 }
 
-// Put inserts the given value into the key-value store.
+// Set inserts the given value into the key-value store.
 func (db *Database) Set(key []byte, value []byte) error {
 	return db.db.Put(wrapKey(db.namespace, key), value, nil)
 }
@@ -172,7 +172,7 @@ type batch struct {
 	size      int
 }
 
-// Put inserts the given value into the batch for later committing.
+// Set inserts the given value into the batch for later committing.
 func (b *batch) Set(key, value []byte) error {
 	b.b.Put(wrapKey(b.namespace, key), value)
 	b.size += len(value)

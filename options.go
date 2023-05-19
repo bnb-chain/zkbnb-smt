@@ -52,3 +52,9 @@ func EnableMetrics(metrics metrics.Metrics) Option {
 		smt.metrics = metrics
 	}
 }
+
+func EnableKeyReadable(keyReadable bool) Option {
+	return func(smt *BNBSparseMerkleTree) {
+		smt.keyReadable = keyReadable
+	}
+}

@@ -137,7 +137,7 @@ func (node *TreeNode) SetChildren(child *TreeNode, nibble int, version Version) 
 	})
 }
 
-// Recompute all internal hashes
+// ComputeInternalHash Recompute all internal hashes
 func (node *TreeNode) ComputeInternalHash() {
 	node.mu.Lock()
 	defer node.mu.Unlock()
@@ -253,7 +253,7 @@ func (node *TreeNode) PreviousVersion() Version {
 	return node.Versions[len(node.Versions)-2].Ver
 }
 
-// size returns the current node size
+// Size returns the current node size
 func (node *TreeNode) Size() uint64 {
 	if node.temporary {
 		return uint64(len(node.Versions) * versionSize)

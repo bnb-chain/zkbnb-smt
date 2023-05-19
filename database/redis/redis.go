@@ -138,7 +138,7 @@ func (db *Database) Get(key []byte) ([]byte, error) {
 	return utils.StringToBytes(dat), err
 }
 
-// Put inserts the given value into the key-value store.
+// Set inserts the given value into the key-value store.
 func (db *Database) Set(key []byte, value []byte) error {
 	return db.db.Set(context.Background(), wrapKey(db.namespace, key), value, 0).Err()
 }
@@ -167,7 +167,7 @@ type batch struct {
 	size      int
 }
 
-// Put inserts the given value into the batch for later committing.
+// Set inserts the given value into the batch for later committing.
 func (b *batch) Set(key, value []byte) error {
 	b.b.Set(context.Background(), wrapKey(b.namespace, key), value, 0)
 	b.size += len(value)

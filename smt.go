@@ -18,6 +18,7 @@ import (
 	"github.com/panjf2000/ants/v2"
 	sysMemory "github.com/pbnjay/memory"
 	"github.com/pkg/errors"
+	"strconv"
 	"sync"
 )
 
@@ -27,13 +28,6 @@ var (
 	storageFullTreeNodePrefix = []byte(`t`)
 	sep                       = []byte(`:`)
 )
-
-// Encode key, format: t:${depth}:${path}
-func storageFullTreeNodeKey(depth uint8, path uint64) []byte {
-	pathBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(pathBuf, path)
-	return bytes.Join([][]byte{storageFullTreeNodePrefix, {depth}, pathBuf}, sep)
-}
 
 var _ SparseMerkleTree = (*BNBSparseMerkleTree)(nil)
 
@@ -319,6 +313,23 @@ type BNBSparseMerkleTree struct {
 	gcStatus         *gcStatus
 	goroutinePool    *ants.Pool
 	metrics          metrics.Metrics
+	keyReadable      bool
+}
+
+// Encode key, format: t:${depth}:${path}
+func (tree *BNBSparseMerkleTree) storageFullTreeNodeKey(depth uint8, path uint64) []byte {
+	var keys []byte
+	if tree.keyReadable {
+		// make the key readable
+		d := strconv.Itoa(int(depth))
+		p := strconv.FormatUint(path, 10)
+		keys = bytes.Join([][]byte{storageFullTreeNodePrefix, []byte(d), []byte(p)}, sep)
+	} else {
+		pathBuf := make([]byte, 8)
+		binary.BigEndian.PutUint64(pathBuf, path)
+		keys = bytes.Join([][]byte{storageFullTreeNodePrefix, {depth}, pathBuf}, sep)
+	}
+	return keys
 }
 
 func (tree *BNBSparseMerkleTree) initFromStorage() error {
@@ -344,7 +355,7 @@ func (tree *BNBSparseMerkleTree) initFromStorage() error {
 	}
 
 	// recovery root node from storage
-	rlpBytes, err := tree.db.Get(storageFullTreeNodeKey(0, 0))
+	rlpBytes, err := tree.db.Get(tree.storageFullTreeNodeKey(0, 0))
 	if errors.Is(err, database.ErrDatabaseNotFound) {
 		return nil
 	}
@@ -374,7 +385,7 @@ func (tree *BNBSparseMerkleTree) extendNode(node *TreeNode, nibble, path uint64,
 		return nil
 	}
 
-	rlpBytes, err := tree.db.Get(storageFullTreeNodeKey(depth, path))
+	rlpBytes, err := tree.db.Get(tree.storageFullTreeNodeKey(depth, path))
 	if errors.Is(err, database.ErrDatabaseNotFound) {
 		if isCreated {
 			node.Children[nibble] = NewTreeNode(depth, path, tree.nilHashes, tree.hasher)
@@ -433,7 +444,7 @@ func (tree *BNBSparseMerkleTree) Get(key uint64, version *Version) ([]byte, erro
 	}
 
 	// read from db if cache miss
-	rlpBytes, err := tree.db.Get(storageFullTreeNodeKey(tree.maxDepth, key))
+	rlpBytes, err := tree.db.Get(tree.storageFullTreeNodeKey(tree.maxDepth, key))
 	if errors.Is(err, database.ErrDatabaseNotFound) {
 		return nil, ErrNodeNotFound
 	}
@@ -780,7 +791,7 @@ func (tree *BNBSparseMerkleTree) writeNode(db database.Batcher, fullNode *TreeNo
 	if err != nil {
 		return changed, err
 	}
-	err = db.Set(storageFullTreeNodeKey(fullNode.depth, fullNode.path), rlpBytes)
+	err = db.Set(tree.storageFullTreeNodeKey(fullNode.depth, fullNode.path), rlpBytes)
 	if err != nil {
 		return changed, err
 	}
@@ -919,7 +930,7 @@ func (tree *BNBSparseMerkleTree) rollback(child *TreeNode, oldVersion Version, d
 	if err != nil {
 		return changed, err
 	}
-	err = db.Set(storageFullTreeNodeKey(child.depth, child.path), rlpBytes)
+	err = db.Set(tree.storageFullTreeNodeKey(child.depth, child.path), rlpBytes)
 	if err != nil {
 		return changed, err
 	}

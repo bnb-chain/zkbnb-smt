@@ -105,7 +105,7 @@ type batch struct {
 	size   int
 }
 
-// Put inserts the given value into the batch for later committing.
+// Set inserts the given value into the batch for later committing.
 func (b *batch) Set(key, value []byte) error {
 	b.writes = append(b.writes, keyvalue{utils.CopyBytes(key), utils.CopyBytes(value), false})
 	b.size += len(value)

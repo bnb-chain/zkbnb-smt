@@ -8,17 +8,17 @@ package bsmt
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
+	"github.com/bnb-chain/zkbnb-smt/database"
+	"github.com/bnb-chain/zkbnb-smt/database/memory"
+	"github.com/bnb-chain/zkbnb-smt/metrics"
+	"github.com/bnb-chain/zkbnb-smt/utils"
 	"github.com/ethereum/go-ethereum/rlp"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/panjf2000/ants/v2"
 	sysMemory "github.com/pbnjay/memory"
 	"github.com/pkg/errors"
 	"sync"
-
-	"github.com/bnb-chain/zkbnb-smt/database"
-	"github.com/bnb-chain/zkbnb-smt/database/memory"
-	"github.com/bnb-chain/zkbnb-smt/metrics"
-	"github.com/bnb-chain/zkbnb-smt/utils"
 )
 
 var (
@@ -524,32 +524,34 @@ func (tree *BNBSparseMerkleTree) MultiSetWithVersion(items []Item, newVersion Ve
 	leavesJournal := newJournal()
 	// should we initialize all intermediate nodes when New SMT? so we can skip this step
 	maxKey := uint64(1 << tree.maxDepth)
-	errs := make(chan error, 1)
-	defer close(errs)
+	errCh := make(chan error, len(items))
+	wg := sync.WaitGroup{}
 	for _, item := range items {
-		if item.Key >= maxKey {
+		it := item
+		if it.Key >= maxKey {
 			return ErrInvalidKey
 		}
-		err := func(it Item) error {
-			return tree.goroutinePool.Submit(func() {
-				leaf, err := tree.setIntermediateAndLeaves(tmpJournal, it, newVersion)
+		wg.Add(1)
+		tree.goroutinePool.Submit(func() {
+			defer wg.Done()
+			if leaf, err := tree.setIntermediateAndLeaves(tmpJournal, it, newVersion); err != nil {
+				errCh <- err
+			} else {
 				if _, exist := leavesJournal.get(journalKey{leaf.depth, leaf.path}); !exist {
 					leavesJournal.set(journalKey{leaf.depth, leaf.path}, leaf)
 				}
-				errs <- err
-			})
-		}(item)
-		if err != nil {
-			return ErrUnexpected
-		}
+			}
+		})
 	}
-	for i := 0; i < size; i++ {
-		if err := <-errs; err != nil {
+
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
 			return err
 		}
 	}
 
-	wg := sync.WaitGroup{}
 	wg.Add(leavesJournal.len())
 	// For treeNode, the concurrency set to the number of leaf nodes
 	err := leavesJournal.iterate(func(k journalKey, v *TreeNode) error {
@@ -607,7 +609,7 @@ func (tree *BNBSparseMerkleTree) setIntermediateAndLeaves(tmpJournal *journal, i
 
 		// create a new treeNode in targetNode
 		if err := tree.extendNode(targetNode, nibble, path, depth, true); err != nil {
-			return nil, ErrExtendNode
+			return nil, fmt.Errorf("%w: %s", ErrExtendNode, err.Error())
 		}
 		targetNode = targetNode.Children[nibble]
 		depth += 4
